@@ -274,9 +274,14 @@ func (c *Controller) createOrCheckNodes(nodePool *v3.NodePool, simulate bool) (b
 	}
 
 	for len(nodes) > quantity {
-		sort.Sort(byHostname(nodes))
 
-		toDelete := nodes[len(nodes)-1]
+		idx, toDelete := nodeMarkedForDeletion(nodes)
+		if toDelete != nil {
+			nodes[idx] = nodes[len(nodes)-1] // copy the last node to the position of the node we're about to delete
+		} else {
+			sort.Sort(byHostname(nodes))
+			toDelete = nodes[len(nodes)-1]
+		}
 
 		changed = true
 		if !simulate {
@@ -284,6 +289,7 @@ func (c *Controller) createOrCheckNodes(nodePool *v3.NodePool, simulate bool) (b
 		}
 
 		nodes = nodes[:len(nodes)-1]
+
 		delete(byName, toDelete.Spec.RequestedHostname)
 	}
 
@@ -298,6 +304,17 @@ func (c *Controller) createOrCheckNodes(nodePool *v3.NodePool, simulate bool) (b
 	}
 
 	return changed, nil
+}
+
+func nodeMarkedForDeletion(nodes []*v3.Node) (int, *v3.Node) {
+	for idx, node := range nodes {
+		if val, ok := node.Annotations["rke.cattle.io/tainted"]; ok {
+			if val == "true" {
+				return idx, node
+			}
+		}
+	}
+	return -1, nil
 }
 
 func needRoleUpdate(node *v3.Node, nodePool *v3.NodePool) bool {
