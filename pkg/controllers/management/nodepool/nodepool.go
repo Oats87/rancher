@@ -274,11 +274,13 @@ func (c *Controller) createOrCheckNodes(nodePool *v3.NodePool, simulate bool) (b
 	}
 
 	for len(nodes) > quantity {
-
+		logrus.Infof("[np-autoscaler] Detected node scale down event required")
 		idx, toDelete := nodeMarkedForDeletion(nodes)
 		if toDelete != nil {
+			logrus.Infof("[np-autoscaler] Node was found for deletion")
 			nodes[idx] = nodes[len(nodes)-1] // copy the last node to the position of the node we're about to delete
 		} else {
+			logrus.Infof("[np-autoscaler] Removing highest node")
 			sort.Sort(byHostname(nodes))
 			toDelete = nodes[len(nodes)-1]
 		}
@@ -308,12 +310,16 @@ func (c *Controller) createOrCheckNodes(nodePool *v3.NodePool, simulate bool) (b
 
 func nodeMarkedForDeletion(nodes []*v3.Node) (int, *v3.Node) {
 	for idx, node := range nodes {
+		logrus.Infof("[np-autoscaler] Inspecting node %s", node.Name)
 		if val, ok := node.Annotations["rke.cattle.io/tainted"]; ok {
+			logrus.Infof("[np-autoscaler] Node %s was found with annotation rke.cattle.io/tainted=%s", node.Name, node.Annotations["rke.cattle.io/tainted"])
 			if val == "true" {
+				logrus.Infof("[np-autoscaler] Returning the index %d for node %v", idx, node)
 				return idx, node
 			}
 		}
 	}
+	logrus.Infof("[np-autoscaler] Node was not found")
 	return -1, nil
 }
 
