@@ -3,7 +3,10 @@ package machinedrain
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/rancher/rancher/pkg/settings"
 	"os"
+	"strings"
 	"time"
 
 	rkev1 "github.com/rancher/rancher/pkg/apis/rke.cattle.io/v1"
@@ -20,16 +23,18 @@ import (
 )
 
 type handler struct {
-	ctx      context.Context
-	machines capicontrollers.MachineClient
-	secrets  corecontrollers.SecretCache
+	ctx             context.Context
+	machines        capicontrollers.MachineClient
+	secrets         corecontrollers.SecretCache
+	httpsListenPort int
 }
 
-func Register(ctx context.Context, clients *wrangler.Context) {
+func Register(ctx context.Context, clients *wrangler.Context, httpsListenPort int) {
 	h := &handler{
-		ctx:      ctx,
-		machines: clients.CAPI.Machine(),
-		secrets:  clients.Core.Secret().Cache(),
+		ctx:             ctx,
+		machines:        clients.CAPI.Machine(),
+		secrets:         clients.Core.Secret().Cache(),
+		httpsListenPort: httpsListenPort,
 	}
 	clients.CAPI.Machine().OnChange(ctx, "machine-drain", h.OnChange)
 }
@@ -60,6 +65,10 @@ func (h *handler) k8sClient(machine *capi.Machine) (kubernetes.Interface, error)
 	restConfig, err := clientcmd.RESTConfigFromKubeConfig(secret.Data["value"])
 	if err != nil {
 		return nil, err
+	}
+
+	if h.httpsListenPort != 0 {
+		restConfig.Host = strings.Replace(restConfig.Host, settings.InternalServerURL.Get(), fmt.Sprintf("https://127.0.0.1:%d", h.httpsListenPort+1), 1)
 	}
 
 	return kubernetes.NewForConfig(restConfig)

@@ -19,7 +19,7 @@ import (
 	"github.com/rancher/wrangler/pkg/needacert"
 )
 
-func Register(ctx context.Context, wrangler *wrangler.Context) error {
+func Register(ctx context.Context, wrangler *wrangler.Context, httpsListenPort int) error {
 	helm.Register(ctx, wrangler)
 	kubernetesprovider.Register(ctx,
 		wrangler.Mgmt.Cluster(),
@@ -53,7 +53,7 @@ func Register(ctx context.Context, wrangler *wrangler.Context) error {
 
 	if features.ProvisioningV2.Enabled() {
 		clusterindex.Register(ctx, wrangler)
-		if err := provisioningv2.Register(ctx, wrangler); err != nil {
+		if err := provisioningv2.Register(ctx, wrangler, httpsListenPort); err != nil {
 			return err
 		}
 	}

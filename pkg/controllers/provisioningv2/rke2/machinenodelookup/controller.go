@@ -3,6 +3,7 @@ package machinenodelookup
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rancher/lasso/pkg/dynamic"
@@ -13,6 +14,7 @@ import (
 	rkecontroller "github.com/rancher/rancher/pkg/generated/controllers/rke.cattle.io/v1"
 	"github.com/rancher/rancher/pkg/provisioningv2/kubeconfig"
 	"github.com/rancher/rancher/pkg/provisioningv2/rke2/planner"
+	"github.com/rancher/rancher/pkg/settings"
 	"github.com/rancher/rancher/pkg/wrangler"
 	"github.com/rancher/wrangler/pkg/data"
 	"github.com/rancher/wrangler/pkg/generic"
@@ -48,9 +50,10 @@ type handler struct {
 	rkeBootstrap        rkecontroller.RKEBootstrapController
 	kubeconfigManager   *kubeconfig.Manager
 	dynamic             *dynamic.Controller
+	httpsListenPort     int
 }
 
-func Register(ctx context.Context, clients *wrangler.Context) {
+func Register(ctx context.Context, clients *wrangler.Context, httpsListenPort int) {
 	h := &handler{
 		rancherClusterCache: clients.Provisioning.Cluster().Cache(),
 		machines:            clients.CAPI.Machine(),
@@ -58,6 +61,7 @@ func Register(ctx context.Context, clients *wrangler.Context) {
 		rkeBootstrap:        clients.RKE.RKEBootstrap(),
 		kubeconfigManager:   kubeconfig.New(clients),
 		dynamic:             clients.Dynamic,
+		httpsListenPort:     httpsListenPort,
 	}
 
 	clients.RKE.RKEBootstrap().OnChange(ctx, "machine-node-lookup", h.associateMachineWithNode)
@@ -103,6 +107,10 @@ func (h *handler) associateMachineWithNode(_ string, bootstrap *rkev1.RKEBootstr
 	config, err := h.kubeconfigManager.GetRESTConfig(rancherCluster, rancherCluster.Status)
 	if err != nil {
 		return bootstrap, err
+	}
+
+	if h.httpsListenPort != 0 {
+		config.Host = strings.Replace(config.Host, settings.InternalServerURL.Get(), fmt.Sprintf("https://127.0.0.1:%d", h.httpsListenPort+1), 1)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)

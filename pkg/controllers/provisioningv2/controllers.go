@@ -29,7 +29,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func Register(ctx context.Context, clients *wrangler.Context) error {
+func Register(ctx context.Context, clients *wrangler.Context, httpsListenPort int) error {
 	cluster.Register(ctx, clients)
 
 	if features.Fleet.Enabled() {
@@ -48,14 +48,14 @@ func Register(ctx context.Context, clients *wrangler.Context) error {
 		provisioningcluster.Register(ctx, clients)
 		secret.Register(ctx, clients)
 		bootstrap.Register(ctx, clients)
-		machinenodelookup.Register(ctx, clients)
+		machinenodelookup.Register(ctx, clients, httpsListenPort)
 		planner.Register(ctx, clients, rkePlanner)
 		planstatus.Register(ctx, clients)
 		machinestatus.Register(ctx, clients)
 		unmanaged.Register(ctx, clients)
 		rkecontrolplane.Register(ctx, clients)
 		managesystemagent.Register(ctx, clients)
-		machinedrain.Register(ctx, clients)
+		machinedrain.Register(ctx, clients, httpsListenPort)
 		machineorphan.Register(ctx, clients)
 	}
 

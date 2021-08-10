@@ -226,7 +226,7 @@ func (r *Rancher) Start(ctx context.Context) error {
 			return err
 		}
 
-		if err := r.Wrangler.StartWithTransaction(ctx, func(ctx context.Context) error { return dashboard.Register(ctx, r.Wrangler) }); err != nil {
+		if err := r.Wrangler.StartWithTransaction(ctx, func(ctx context.Context) error { return dashboard.Register(ctx, r.Wrangler, r.opts.HTTPSListenPort) }); err != nil {
 			return err
 		}
 
