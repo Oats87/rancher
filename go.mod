@@ -13,6 +13,7 @@ replace (
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.0.1
 	github.com/rancher/rancher/pkg/apis => ./pkg/apis
 	github.com/rancher/rancher/pkg/client => ./pkg/client
+	github.com/rancher/steve => github.com/Oats87/steve v0.0.0-20210825142827-5d964ad47e80
 	google.golang.org/grpc => google.golang.org/grpc v1.29.1 // etcd depends on google.golang.org/grpc/naming which was removed in grpc v1.30.0
 	helm.sh/helm/v3 => github.com/rancher/helm/v3 v3.5.4-rancher.1
 

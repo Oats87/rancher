@@ -120,6 +120,8 @@ github.com/Microsoft/hcsshim v0.8.14 h1:lbPVK25c1cu5xTLITwpUcxoA9vKrKErASPYygvou
 github.com/Microsoft/hcsshim v0.8.14/go.mod h1:NtVKoYxQuTLx6gEq0L96c9Ju4JbRJ4nY2ow3VK6a9Lg=
 github.com/NYTimes/gziphandler v0.0.0-20170623195520-56545f4a5d46/go.mod h1:3wb06e3pkSAbeQ52E9H9iFoQsEEwGN64994WTCIhntQ=
 github.com/NYTimes/gziphandler v1.1.1/go.mod h1:n/CVRwUEOgIxrgPvAQhUUr9oeUtvrhMomdKFjzJNB0c=
+github.com/Oats87/steve v0.0.0-20210825142827-5d964ad47e80 h1:M5ebMqok2fWo+mUfC9LBm+RHYT+8oJnNun+3vFY5kbE=
+github.com/Oats87/steve v0.0.0-20210825142827-5d964ad47e80/go.mod h1:BJ+n0Cqb9QD8S6O644VkLEaBWQnyqYcJdf8fDzFXarQ=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/PuerkitoBio/goquery v1.5.0/go.mod h1:qD2PgZ9lccMbQlc7eEOjaeRlFQON7xY8kdmcsrnKqMg=
 github.com/PuerkitoBio/purell v1.1.0/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbtSwDGJws/X0=
@@ -1035,8 +1037,6 @@ github.com/rancher/rke v1.3.0-rc17 h1:Dxp1aJBOWnJv+o1k/Gsob8bsopVEZEyMQUnSJXBe8l
 github.com/rancher/rke v1.3.0-rc17/go.mod h1:HAdRKAo7OI5YvFSSP40ezrad1pXA7IuJgAW7S5PYg6Y=
 github.com/rancher/security-scan v0.1.7-0.20200222041501-f7377f127168 h1:SIshhsz0O71FYyyDmjUmbFGvmgp4ASm8J1zmhMK/UG0=
 github.com/rancher/security-scan v0.1.7-0.20200222041501-f7377f127168/go.mod h1:WlLAocVyVQs5J8r0IiQXsp0ajVZO6hYi/Vo6zxjo73s=
-github.com/rancher/steve v0.0.0-20210819001752-8ecda307ee49 h1:1jUShuIDEb4ncVptFuapbBkX09s2x2eO4vMPRDlgFrc=
-github.com/rancher/steve v0.0.0-20210819001752-8ecda307ee49/go.mod h1:BJ+n0Cqb9QD8S6O644VkLEaBWQnyqYcJdf8fDzFXarQ=
 github.com/rancher/system-upgrade-controller/pkg/apis v0.0.0-20210727200656-10b094e30007 h1:ru+mqGnxMmKeU0Q3XIDxkARvInDIqT1hH2amTcsjxI4=
 github.com/rancher/system-upgrade-controller/pkg/apis v0.0.0-20210727200656-10b094e30007/go.mod h1:Ja346o44aTPWADc/5Jm93+KgctT6KtftuOosgz0F2AM=
 github.com/rancher/wrangler v0.6.1/go.mod h1:L4HtjPeX8iqLgsxfJgz+JjKMcX2q3qbRXSeTlC/CSd4=
