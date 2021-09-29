@@ -262,7 +262,7 @@ func (h *handler) OnRemove(key string, obj runtime.Object) (runtime.Object, erro
 			}
 			cluster, err := h.rancherClusterCache.Get(d.String("metadata", "namespace"), clusterName)
 			if apierror.IsNotFound(err) {
-				// we can't find teh corresponding cluster, so we can go ahead and simply allow removal of the node.
+				// we can't find the corresponding cluster, so we can go ahead and simply allow removal of the node.
 				logrus.Debugf("[MachineProvision] Proceeding with removal of dynamic machine %s as cluster was not found.", key)
 				return h.doRemove(obj)
 			} else if err != nil {
