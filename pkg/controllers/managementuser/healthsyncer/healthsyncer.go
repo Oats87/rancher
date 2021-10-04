@@ -109,6 +109,7 @@ func (h *HealthSyncer) updateClusterHealth() error {
 	if err != nil {
 		return err
 	}
+	logrus.Infof("XXXXXXX updating cluster health for %s", oldCluster.Name)
 	cluster := oldCluster.DeepCopy()
 	if !v32.ClusterConditionProvisioned.IsTrue(cluster) {
 		logrus.Debugf("Skip updating cluster health - cluster [%s] not provisioned yet", h.clusterName)

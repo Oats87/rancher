@@ -297,6 +297,7 @@ func (h *handler) createNewCluster(cluster *v1.Cluster, status v1.ClusterStatus,
 func (h *handler) updateStatus(objs []runtime.Object, cluster *v1.Cluster, status v1.ClusterStatus, rCluster *v3.Cluster) ([]runtime.Object, v1.ClusterStatus, error) {
 	ready := false
 	existing, err := h.mgmtClusterCache.Get(rCluster.Name)
+	// look for v3 cluster.management.cattle.io status to see if the cluster is "ready"
 	if err != nil && !apierror.IsNotFound(err) {
 		return nil, status, err
 	} else if err == nil {

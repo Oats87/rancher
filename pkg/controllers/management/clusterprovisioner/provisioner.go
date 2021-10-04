@@ -383,6 +383,8 @@ func (p *Provisioner) Create(cluster *v3.Cluster) (runtime.Object, error) {
 		return cluster, nil
 	}
 
+	logrus.Infof("XXXXX creating for cluster %s", cluster.Name)
+
 	var err error
 	// Initialize conditions, be careful to not continually update them
 	apimgmtv3.ClusterConditionPending.CreateUnknownIfNotExists(cluster)
@@ -404,6 +406,7 @@ func (p *Provisioner) Create(cluster *v3.Cluster) (runtime.Object, error) {
 }
 
 func (p *Provisioner) provision(cluster *v3.Cluster) (*v3.Cluster, error) {
+	logrus.Infof("XXXXX provisioning %s", cluster.Name)
 	obj, err := apimgmtv3.ClusterConditionProvisioned.Do(cluster, func() (runtime.Object, error) {
 		return p.update(cluster, true)
 	})
@@ -421,6 +424,7 @@ func (p *Provisioner) pending(cluster *v3.Cluster) (*v3.Cluster, error) {
 		return cluster, err
 	}
 
+	logrus.Infof("XXXXX driver for cluster %s was %s", cluster.Name, driver)
 	if driver == "" {
 		return cluster, &controller.ForgetError{
 			Err:    fmt.Errorf("waiting for full cluster configuration"),
