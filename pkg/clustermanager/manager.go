@@ -107,7 +107,9 @@ func (m *Manager) RESTConfig(cluster *v3.Cluster) (rest.Config, error) {
 }
 
 func (m *Manager) markUnavailable(clusterName string) {
+	logrus.Infof("XXXX marking unavailable %s", clusterName)
 	if cluster, err := m.clusters.Get(clusterName, v1.GetOptions{}); err == nil {
+		logrus.Infof("XXXX actually marking unavailable %s", clusterName)
 		if !v32.ClusterConditionReady.IsFalse(cluster) {
 			v32.ClusterConditionReady.False(cluster)
 			m.clusters.Update(cluster)
@@ -128,6 +130,7 @@ func (m *Manager) start(ctx context.Context, cluster *v3.Cluster, controllers, c
 		m.Stop(obj.(*record).clusterRec)
 	}
 
+	logrus.Infof("XXXX Starting manager for cluster %s", cluster.Name)
 	clusterRecord, err := m.toRecord(ctx, cluster)
 	if err != nil {
 		m.markUnavailable(cluster.Name)
@@ -137,6 +140,7 @@ func (m *Manager) start(ctx context.Context, cluster *v3.Cluster, controllers, c
 		return nil, httperror.NewAPIError(httperror.ClusterUnavailable, "cluster not found")
 	}
 
+	logrus.Infof("XXXX loadorstore %s", cluster.Name)
 	obj, _ = m.controllers.LoadOrStore(cluster.UID, clusterRecord)
 	if err := m.startController(obj.(*record), controllers, clusterOwner); err != nil {
 		m.markUnavailable(cluster.Name)
