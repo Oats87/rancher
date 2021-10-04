@@ -148,6 +148,7 @@ func (m *Manager) start(ctx context.Context, cluster *v3.Cluster, controllers, c
 		return nil, err
 	}
 
+	logrus.Infof("XXXX returning the object record for cluster %s", cluster.Name)
 	return obj.(*record), nil
 }
 
