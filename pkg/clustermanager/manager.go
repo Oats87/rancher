@@ -143,6 +143,7 @@ func (m *Manager) start(ctx context.Context, cluster *v3.Cluster, controllers, c
 	logrus.Infof("XXXX loadorstore %s", cluster.Name)
 	obj, _ = m.controllers.LoadOrStore(cluster.UID, clusterRecord)
 	if err := m.startController(obj.(*record), controllers, clusterOwner); err != nil {
+		logrus.Infof("XXXX error when loadorstore %s was %v", cluster.Name, err)
 		m.markUnavailable(cluster.Name)
 		return nil, err
 	}
