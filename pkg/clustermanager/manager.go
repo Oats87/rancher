@@ -196,11 +196,13 @@ func (m *Manager) doStart(rec *record, clusterOwner bool) (exit error) {
 		}
 	}()
 
+	logrus.Infof("XXXX Doing start for controller for cluster %s owner %v", rec.cluster.ClusterName, clusterOwner)
 	for i := 0; ; i++ {
 		// Prior to k8s v1.14, we simply did a DiscoveryClient.Version() check to see if the user cluster is alive
 		// As of k8s v1.14, kubeapi returns a successful version response even if etcd is not available.
 		// To work around this, now we try to get a namespace from the API, even if not found, it means the API is up.
 		if _, err := rec.cluster.K8sClient.CoreV1().Namespaces().Get(rec.ctx, "kube-system", v1.GetOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			logrus.Infof("XXXX Encountered error trying to get kube-system namespace for user cluster %s : %v", rec.cluster.ClusterName, err)
 			if i == 2 {
 				m.markUnavailable(rec.cluster.ClusterName)
 			}
@@ -215,11 +217,13 @@ func (m *Manager) doStart(rec *record, clusterOwner bool) (exit error) {
 		break
 	}
 
+	logrus.Infof("XXXX Getting sem %s", rec.cluster.ClusterName)
 	if err := m.startSem.Acquire(rec.ctx, 1); err != nil {
 		return err
 	}
 	defer m.startSem.Release(1)
 
+	logrus.Infof("XXXX Got sem %s", rec.cluster.ClusterName)
 	transaction := controller.NewHandlerTransaction(rec.ctx)
 	if clusterOwner {
 		if err := clusterController.Register(transaction, rec.cluster, rec.clusterRec, m); err != nil {
@@ -232,6 +236,8 @@ func (m *Manager) doStart(rec *record, clusterOwner bool) (exit error) {
 			return err
 		}
 	}
+
+	logrus.Infof("XXXX registered %s", rec.cluster.ClusterName)
 
 	done := make(chan error, 1)
 	go func() {
