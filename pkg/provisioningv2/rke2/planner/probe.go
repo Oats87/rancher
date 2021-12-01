@@ -48,7 +48,7 @@ var allProbes = map[string]plan.Probe{
 		SuccessThreshold:    1,
 		FailureThreshold:    2,
 		HTTPGetAction: plan.HTTPGetAction{
-			URL: "http://127.0.0.1:10251/healthz",
+			URL: "https://127.0.0.1:%s/healthz",
 		},
 	},
 	"kube-controller-manager": {
@@ -57,7 +57,7 @@ var allProbes = map[string]plan.Probe{
 		SuccessThreshold:    1,
 		FailureThreshold:    2,
 		HTTPGetAction: plan.HTTPGetAction{
-			URL: "http://127.0.0.1:10252/healthz",
+			URL: "https://127.0.0.1:%s/healthz",
 		},
 	},
 	"kubelet": {
@@ -81,7 +81,7 @@ func isCalico(controlPlane *rkev1.RKEControlPlane, runtime string) bool {
 		cni == "calico+multus"
 }
 
-func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEControlPlane, machine *capi.Machine) (plan.NodePlan, error) {
+func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEControlPlane, machine *capi.Machine, config map[string]interface{}) (plan.NodePlan, error) {
 	var (
 		runtime    = rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion)
 		probeNames []string
@@ -110,7 +110,69 @@ func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEContr
 	}
 
 	nodePlan.Probes = replaceRuntimeForProbes(nodePlan.Probes, runtime)
+
+	if isControlPlane(machine) {
+		kcmSecurePort := getArgValue(config[KubeControllerManagerArg], SecurePortArgument, "=")
+		if kcmSecurePort == "" {
+			kcmSecurePort = KubeControllerManagerDefaultSecurePort
+		}
+		kcmTLSCert := getArgValue(config[KubeControllerManagerArg], TLSCertFileArgument, "=")
+		if kcmTLSCert == "" {
+			kcmCertDir := getArgValue(config[KubeControllerManagerArg], CertDirArgument, "=")
+			if kcmCertDir == "" {
+				kcmCertDir = fmt.Sprintf(KubeControllerManagerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
+			}
+			// we can use the kcm cert-dir value and port
+			kcmProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-controller-manager"], kcmCertDir+"/kube-controller-manager.crt", kcmSecurePort)
+			if err != nil {
+				return nodePlan, err
+			}
+			nodePlan.Probes["kube-controller-manager"] = kcmProbe
+		} else {
+			// We need to use the KCM TLS Cert and Port
+			kcmProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-controller-manager"], kcmTLSCert, kcmSecurePort)
+			if err != nil {
+				return nodePlan, err
+			}
+			nodePlan.Probes["kube-controller-manager"] = kcmProbe
+		}
+
+		ksSecurePort := getArgValue(config[KubeSchedulerArg], SecurePortArgument, "=")
+		if ksSecurePort == "" {
+			ksSecurePort = KubeSchedulerDefaultSecurePort
+		}
+		ksTLSCert := getArgValue(config[KubeSchedulerArg], TLSCertFileArgument, "=")
+		if ksTLSCert == "" {
+			ksCertDir := getArgValue(config[KubeSchedulerArg], CertDirArgument, "=")
+			if ksCertDir == "" {
+				ksCertDir = fmt.Sprintf(KubeSchedulerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
+			}
+			// we can use the kcm cert-dir value and port
+			ksProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-scheduler"], ksCertDir+"/kube-scheduler.crt", ksSecurePort)
+			if err != nil {
+				return nodePlan, err
+			}
+			nodePlan.Probes["kube-scheduler"] = ksProbe
+		} else {
+			// We need to use the KCM TLS Cert and Port
+			ksProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-scheduler"], ksTLSCert, ksSecurePort)
+			if err != nil {
+				return nodePlan, err
+			}
+			nodePlan.Probes["kube-scheduler"] = ksProbe
+		}
+
+	}
 	return nodePlan, nil
+}
+
+func replaceCACertAndPortForProbes(probe plan.Probe, cert, port string) (plan.Probe, error) {
+	if cert == "" || port == "" {
+		return plan.Probe{}, fmt.Errorf("cert (%s) or port (%s) not defined properly", cert, port)
+	}
+	probe.HTTPGetAction.CACert = cert
+	probe.HTTPGetAction.URL = fmt.Sprintf(probe.HTTPGetAction.URL, port)
+	return probe, nil
 }
 
 func replaceRuntimeForProbes(probes map[string]plan.Probe, runtime string) map[string]plan.Probe {

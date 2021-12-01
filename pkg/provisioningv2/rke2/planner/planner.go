@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -71,6 +72,16 @@ const (
 	InternalAddressAnnotation = "rke.cattle.io/internal-address"
 
 	SecretTypeMachinePlan = "rke.cattle.io/machine-plan"
+
+	KubeControllerManagerArg               = "kube-controller-manager-arg"
+	KubeControllerManagerCertDir           = "/var/lib/rancher/%s/server/tls/kube-controller-manager"
+	KubeControllerManagerDefaultSecurePort = "10257"
+	KubeSchedulerArg                       = "kube-scheduler-arg"
+	KubeSchedulerCertDir                   = "/var/lib/rancher/%s/server/tls/kube-scheduler"
+	KubeSchedulerDefaultSecurePort         = "10259"
+	SecurePortArgument                     = "secure-port"
+	CertDirArgument                        = "cert-dir"
+	TLSCertFileArgument                    = "tls-cert-file"
 
 	authnWebhookFileName = "/var/lib/rancher/%s/kube-api-authn-webhook.yaml"
 	ConfigYamlFileName   = "/etc/rancher/%s/config.yaml.d/50-rancher.yaml"
@@ -673,6 +684,47 @@ func addUserConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 	return nil
 }
 
+// splitArgKeyVal takes a value and returns a pair (key, value) of the argument, or two empty strings if there was not
+// a parsed key/val.
+func splitArgKeyVal(val string, delim string) (string, string) {
+	if splitSubArg := strings.SplitN(val, delim, 2); len(splitSubArg) == 2 {
+		return splitSubArg[0], splitSubArg[1]
+	}
+	return "", ""
+}
+
+// getArgValue will search the passed in interface (arg) for a key that matches the searchArg. If a match is found, it
+// returns the value of the argument, otherwise it returns an empty string.
+func getArgValue(arg interface{}, searchArg string, delim string) string {
+	switch arg.(type) {
+	case []string:
+		for _, v := range arg.([]string) {
+			argKey, argVal := splitArgKeyVal(v, delim)
+			if argKey == searchArg {
+				return argVal
+			}
+		}
+	case string:
+		argKey, argVal := splitArgKeyVal(arg.(string), delim)
+		if argKey == searchArg {
+			return argVal
+		}
+	}
+	return ""
+}
+
+// appendToInterface will return an interface that has the value appended to it. The interface returned will always be
+// a slice of strings, and will convert a raw string to a slice of strings.
+func appendToInterface(entry interface{}, value string) interface{} {
+	switch entry.(type) {
+	case []string:
+		return append(entry.([]string), value)
+	case string:
+		return []string{entry.(string), value}
+	}
+	return []string{value}
+}
+
 func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControlPlane, machine *capi.Machine, initNode bool, joinServer string) {
 	if initNode {
 		if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeK3S {
@@ -691,6 +743,78 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 		config["disable-controller-manager"] = true
 	} else if isOnlyControlPlane(machine) {
 		config["disable-etcd"] = true
+	}
+
+	if isControlPlane(machine) {
+		renderedKubeControllerManagerCertDir := fmt.Sprintf(KubeControllerManagerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
+		rke2KCMCertDirMount := fmt.Sprintf("%s:%s", renderedKubeControllerManagerCertDir, renderedKubeControllerManagerCertDir)
+		kcmCertDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedKubeControllerManagerCertDir)
+		kcmSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, KubeControllerManagerDefaultSecurePort)
+		if v, ok := config[KubeControllerManagerArg]; ok {
+			tlsCF := getArgValue(v, TLSCertFileArgument, "=")
+			if tlsCF == "" {
+				certDir := getArgValue(v, CertDirArgument, "=")
+				if certDir == "" {
+					config[KubeControllerManagerArg] = appendToInterface(config[KubeControllerManagerArg], kcmCertDirArg)
+					if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+						config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], rke2KCMCertDirMount)
+					}
+				} else {
+					if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+						config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], fmt.Sprintf("%s:%s", certDir, certDir))
+					}
+				}
+			} else {
+				if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+					dir := filepath.Dir(tlsCF)
+					config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], fmt.Sprintf("%s:%s", dir, dir))
+				}
+			}
+			sPA := getArgValue(v, SecurePortArgument, "=")
+			if sPA == "" {
+				config[KubeControllerManagerArg] = appendToInterface(config[KubeControllerManagerArg], kcmSecurePortArg)
+			}
+		} else {
+			config[KubeControllerManagerArg] = []string{kcmCertDirArg, kcmSecurePortArg}
+			if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+				config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], rke2KCMCertDirMount)
+			}
+		}
+
+		renderedKubeSchedulerCertDir := fmt.Sprintf(KubeSchedulerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
+		rke2KSCertDirMount := fmt.Sprintf("%s:%s", renderedKubeSchedulerCertDir, renderedKubeSchedulerCertDir)
+		ksCertDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedKubeSchedulerCertDir)
+		ksSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, KubeSchedulerDefaultSecurePort)
+		if v, ok := config[KubeSchedulerArg]; ok {
+			tlsCF := getArgValue(v, TLSCertFileArgument, "=")
+			if tlsCF == "" {
+				certDir := getArgValue(v, CertDirArgument, "=")
+				if certDir == "" {
+					config[KubeSchedulerArg] = appendToInterface(config[KubeSchedulerArg], ksCertDirArg)
+					if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+						config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], rke2KSCertDirMount)
+					}
+				} else {
+					if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+						config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], fmt.Sprintf("%s:%s", certDir, certDir))
+					}
+				}
+			} else {
+				if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+					dir := filepath.Dir(tlsCF)
+					config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], fmt.Sprintf("%s:%s", dir, dir))
+				}
+			}
+			sPA := getArgValue(v, SecurePortArgument, "=")
+			if sPA == "" {
+				config[KubeSchedulerArg] = appendToInterface(config[KubeSchedulerArg], ksSecurePortArg)
+			}
+		} else {
+			config[KubeSchedulerArg] = []string{ksCertDirArg, ksSecurePortArg}
+			if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+				config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], rke2KSCertDirMount)
+			}
+		}
 	}
 
 	if nodeName := machine.Labels[NodeNameLabel]; nodeName != "" {
@@ -1041,25 +1165,25 @@ func configFile(controlPlane *rkev1.RKEControlPlane, filename string) string {
 }
 
 func (p *Planner) addConfigFile(nodePlan plan.NodePlan, controlPlane *rkev1.RKEControlPlane, machine *capi.Machine, secret plan.Secret,
-	initNode bool, joinServer string) (plan.NodePlan, error) {
+	initNode bool, joinServer string) (plan.NodePlan, map[string]interface{}, error) {
 	config := map[string]interface{}{}
 
 	addDefaults(config, controlPlane, machine)
 
 	// Must call addUserConfig first because it will filter out non-kdm data
 	if err := addUserConfig(config, controlPlane, machine); err != nil {
-		return nodePlan, err
+		return nodePlan, config, err
 	}
 
 	files, err := p.addRegistryConfig(config, controlPlane)
 	if err != nil {
-		return nodePlan, err
+		return nodePlan, config, err
 	}
 	nodePlan.Files = append(nodePlan.Files, files...)
 
 	files, err = p.addETCD(config, controlPlane, machine)
 	if err != nil {
-		return nodePlan, err
+		return nodePlan, config, err
 	}
 	nodePlan.Files = append(nodePlan.Files, files...)
 
@@ -1069,12 +1193,12 @@ func (p *Planner) addConfigFile(nodePlan plan.NodePlan, controlPlane *rkev1.RKEC
 	addAddresses(p.secretCache, config, machine)
 
 	if err := addLabels(config, machine); err != nil {
-		return nodePlan, err
+		return nodePlan, config, err
 	}
 
 	runtime := rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion)
 	if err := addTaints(config, machine, runtime); err != nil {
-		return nodePlan, err
+		return nodePlan, config, err
 	}
 
 	for _, fileParam := range fileParams {
@@ -1095,7 +1219,7 @@ func (p *Planner) addConfigFile(nodePlan plan.NodePlan, controlPlane *rkev1.RKEC
 
 	configData, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		return nodePlan, err
+		return nodePlan, config, err
 	}
 
 	nodePlan.Files = append(nodePlan.Files, plan.File{
@@ -1103,17 +1227,18 @@ func (p *Planner) addConfigFile(nodePlan plan.NodePlan, controlPlane *rkev1.RKEC
 		Path:    fmt.Sprintf(ConfigYamlFileName, runtime),
 	})
 
-	return nodePlan, nil
+	return nodePlan, config, nil
 }
 
 func (p *Planner) desiredPlan(controlPlane *rkev1.RKEControlPlane, secret plan.Secret, entry planEntry, initNode bool, joinServer string) (nodePlan plan.NodePlan, err error) {
+	config := map[string]interface{}{}
 	if !controlPlane.Spec.UnmanagedConfig {
 		nodePlan, err = commonNodePlan(p.secretCache, controlPlane, plan.NodePlan{})
 		if err != nil {
 			return nodePlan, err
 		}
 
-		nodePlan, err = p.addConfigFile(nodePlan, controlPlane, entry.Machine, secret, initNode, joinServer)
+		nodePlan, config, err = p.addConfigFile(nodePlan, controlPlane, entry.Machine, secret, initNode, joinServer)
 		if err != nil {
 			return nodePlan, err
 		}
@@ -1134,7 +1259,7 @@ func (p *Planner) desiredPlan(controlPlane *rkev1.RKEControlPlane, secret plan.S
 		}
 	}
 
-	nodePlan, err = p.addProbes(nodePlan, controlPlane, entry.Machine)
+	nodePlan, err = p.addProbes(nodePlan, controlPlane, entry.Machine, config)
 	if err != nil {
 		return nodePlan, err
 	}
