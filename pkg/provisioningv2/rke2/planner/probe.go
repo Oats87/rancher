@@ -122,14 +122,14 @@ func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEContr
 			if kcmCertDir == "" {
 				kcmCertDir = fmt.Sprintf(KubeControllerManagerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
 			}
-			// we can use the kcm cert-dir value and port
+			// we can use the kube-controller-manager cert-dir value and port
 			kcmProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-controller-manager"], kcmCertDir+"/kube-controller-manager.crt", kcmSecurePort)
 			if err != nil {
 				return nodePlan, err
 			}
 			nodePlan.Probes["kube-controller-manager"] = kcmProbe
 		} else {
-			// We need to use the KCM TLS Cert and Port
+			// We need to use the kube-controller-manager TLS Cert and Port
 			kcmProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-controller-manager"], kcmTLSCert, kcmSecurePort)
 			if err != nil {
 				return nodePlan, err
@@ -147,14 +147,14 @@ func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEContr
 			if ksCertDir == "" {
 				ksCertDir = fmt.Sprintf(KubeSchedulerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
 			}
-			// we can use the kcm cert-dir value and port
+			// we can use the kube-scheduler cert-dir value and port
 			ksProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-scheduler"], ksCertDir+"/kube-scheduler.crt", ksSecurePort)
 			if err != nil {
 				return nodePlan, err
 			}
 			nodePlan.Probes["kube-scheduler"] = ksProbe
 		} else {
-			// We need to use the KCM TLS Cert and Port
+			// We need to use the kube-scheduler TLS Cert and Port
 			ksProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-scheduler"], ksTLSCert, ksSecurePort)
 			if err != nil {
 				return nodePlan, err

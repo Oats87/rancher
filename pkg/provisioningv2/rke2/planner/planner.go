@@ -726,8 +726,9 @@ func appendToInterface(entry interface{}, value string) interface{} {
 }
 
 func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControlPlane, machine *capi.Machine, initNode bool, joinServer string) {
+	runtime := rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion)
 	if initNode {
-		if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeK3S {
+		if runtime == rancherruntime.RuntimeK3S {
 			config["cluster-init"] = true
 		}
 	} else if joinServer != "" {
@@ -745,8 +746,10 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 		config["disable-etcd"] = true
 	}
 
+	// If this is a control-plane node, then we need to set arguments/(and for RKE2, volume mounts) to allow probes
+	// to run.
 	if isControlPlane(machine) {
-		renderedKubeControllerManagerCertDir := fmt.Sprintf(KubeControllerManagerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
+		renderedKubeControllerManagerCertDir := fmt.Sprintf(KubeControllerManagerCertDir, runtime)
 		rke2KCMCertDirMount := fmt.Sprintf("%s:%s", renderedKubeControllerManagerCertDir, renderedKubeControllerManagerCertDir)
 		kcmCertDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedKubeControllerManagerCertDir)
 		kcmSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, KubeControllerManagerDefaultSecurePort)
@@ -756,16 +759,16 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 				certDir := getArgValue(v, CertDirArgument, "=")
 				if certDir == "" {
 					config[KubeControllerManagerArg] = appendToInterface(config[KubeControllerManagerArg], kcmCertDirArg)
-					if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+					if runtime == rancherruntime.RuntimeRKE2 {
 						config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], rke2KCMCertDirMount)
 					}
 				} else {
-					if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+					if runtime == rancherruntime.RuntimeRKE2 {
 						config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], fmt.Sprintf("%s:%s", certDir, certDir))
 					}
 				}
 			} else {
-				if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+				if runtime == rancherruntime.RuntimeRKE2 {
 					dir := filepath.Dir(tlsCF)
 					config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], fmt.Sprintf("%s:%s", dir, dir))
 				}
@@ -776,12 +779,12 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 			}
 		} else {
 			config[KubeControllerManagerArg] = []string{kcmCertDirArg, kcmSecurePortArg}
-			if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+			if runtime == rancherruntime.RuntimeRKE2 {
 				config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], rke2KCMCertDirMount)
 			}
 		}
 
-		renderedKubeSchedulerCertDir := fmt.Sprintf(KubeSchedulerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
+		renderedKubeSchedulerCertDir := fmt.Sprintf(KubeSchedulerCertDir, runtime)
 		rke2KSCertDirMount := fmt.Sprintf("%s:%s", renderedKubeSchedulerCertDir, renderedKubeSchedulerCertDir)
 		ksCertDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedKubeSchedulerCertDir)
 		ksSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, KubeSchedulerDefaultSecurePort)
@@ -791,16 +794,16 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 				certDir := getArgValue(v, CertDirArgument, "=")
 				if certDir == "" {
 					config[KubeSchedulerArg] = appendToInterface(config[KubeSchedulerArg], ksCertDirArg)
-					if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+					if runtime == rancherruntime.RuntimeRKE2 {
 						config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], rke2KSCertDirMount)
 					}
 				} else {
-					if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+					if runtime == rancherruntime.RuntimeRKE2 {
 						config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], fmt.Sprintf("%s:%s", certDir, certDir))
 					}
 				}
 			} else {
-				if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+				if runtime == rancherruntime.RuntimeRKE2 {
 					dir := filepath.Dir(tlsCF)
 					config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], fmt.Sprintf("%s:%s", dir, dir))
 				}
@@ -811,7 +814,7 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 			}
 		} else {
 			config[KubeSchedulerArg] = []string{ksCertDirArg, ksSecurePortArg}
-			if rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion) == rancherruntime.RuntimeRKE2 {
+			if runtime == rancherruntime.RuntimeRKE2 {
 				config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], rke2KSCertDirMount)
 			}
 		}
