@@ -701,7 +701,10 @@ func splitArgKeyVal(val string, delim string) (string, string) {
 func getArgValue(arg interface{}, searchArg string, delim string) string {
 	logrus.Infof("Type of %v is %T", arg, arg)
 	switch arg.(type) {
-	case []string, []interface{}:
+	case []interface{}:
+		stringArr := convertInterfaceSliceToStringSlice(arg.([]interface{}))
+		return getArgValue(stringArr, searchArg, delim)
+	case []string:
 		logrus.Infof("XXXX String array: %v", arg)
 		for _, v := range arg.([]string) {
 			argKey, argVal := splitArgKeyVal(v, delim)
@@ -720,11 +723,22 @@ func getArgValue(arg interface{}, searchArg string, delim string) string {
 	return ""
 }
 
+func convertInterfaceSliceToStringSlice(input []interface{}) []string {
+	var stringArr []string
+	for _, v := range input {
+		stringArr = append(stringArr, fmt.Sprintf("%s", v))
+	}
+	return stringArr
+}
+
 // appendToInterface will return an interface that has the value appended to it. The interface returned will always be
 // a slice of strings, and will convert a raw string to a slice of strings.
 func appendToInterface(entry interface{}, value string) interface{} {
 	switch entry.(type) {
-	case []string, []interface{}:
+	case []interface{}:
+		stringArr := convertInterfaceSliceToStringSlice(entry.([]interface{}))
+		return appendToInterface(stringArr, value)
+	case []string:
 		return append(entry.([]string), value)
 	case string:
 		return []string{entry.(string), value}
