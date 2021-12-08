@@ -688,7 +688,9 @@ func addUserConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 // splitArgKeyVal takes a value and returns a pair (key, value) of the argument, or two empty strings if there was not
 // a parsed key/val.
 func splitArgKeyVal(val string, delim string) (string, string) {
+	logrus.Infof("XXXX Splitting argkey: %s", val)
 	if splitSubArg := strings.SplitN(val, delim, 2); len(splitSubArg) == 2 {
+		logrus.Infof("XXXX Split was 2: %v", splitSubArg)
 		return splitSubArg[0], splitSubArg[1]
 	}
 	return "", ""
@@ -699,6 +701,7 @@ func splitArgKeyVal(val string, delim string) (string, string) {
 func getArgValue(arg interface{}, searchArg string, delim string) string {
 	switch arg.(type) {
 	case []string:
+		logrus.Infof("XXXX String array: %v", arg)
 		for _, v := range arg.([]string) {
 			argKey, argVal := splitArgKeyVal(v, delim)
 			if argKey == searchArg {
@@ -706,11 +709,13 @@ func getArgValue(arg interface{}, searchArg string, delim string) string {
 			}
 		}
 	case string:
+		logrus.Infof("XXXX String: %v", arg)
 		argKey, argVal := splitArgKeyVal(arg.(string), delim)
 		if argKey == searchArg {
 			return argVal
 		}
 	}
+	logrus.Infof("XXXX Unknown: %v", arg)
 	return ""
 }
 
