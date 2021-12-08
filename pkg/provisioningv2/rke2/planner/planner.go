@@ -688,9 +688,7 @@ func addUserConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 // splitArgKeyVal takes a value and returns a pair (key, value) of the argument, or two empty strings if there was not
 // a parsed key/val.
 func splitArgKeyVal(val string, delim string) (string, string) {
-	logrus.Infof("XXXX Splitting argkey: %s", val)
 	if splitSubArg := strings.SplitN(val, delim, 2); len(splitSubArg) == 2 {
-		logrus.Infof("XXXX Split was 2: %v", splitSubArg)
 		return splitSubArg[0], splitSubArg[1]
 	}
 	return "", ""
@@ -699,13 +697,14 @@ func splitArgKeyVal(val string, delim string) (string, string) {
 // getArgValue will search the passed in interface (arg) for a key that matches the searchArg. If a match is found, it
 // returns the value of the argument, otherwise it returns an empty string.
 func getArgValue(arg interface{}, searchArg string, delim string) string {
-	logrus.Infof("Type of %v is %T", arg, arg)
+	logrus.Tracef("getArgValue (searchArg: %s, delim: %s) type of %v is %T", searchArg, delim, arg, arg)
 	switch arg := arg.(type) {
 	case []interface{}:
+		logrus.Tracef("getArgValue (searchArg: %s, delim: %s) encountered interface slice %v", searchArg, delim, arg)
 		stringArr := convertInterfaceSliceToStringSlice(arg)
 		return getArgValue(stringArr, searchArg, delim)
 	case []string:
-		logrus.Infof("XXXX String array: %v", arg)
+		logrus.Tracef("getArgValue (searchArg: %s, delim: %s) found string array: %v", searchArg, delim, arg)
 		for _, v := range arg {
 			argKey, argVal := splitArgKeyVal(v, delim)
 			if argKey == searchArg {
@@ -713,37 +712,39 @@ func getArgValue(arg interface{}, searchArg string, delim string) string {
 			}
 		}
 	case string:
-		logrus.Infof("XXXX String: %v", arg)
+		logrus.Tracef("getArgValue (searchArg: %s, delim: %s) found string: %v", searchArg, delim, arg)
 		argKey, argVal := splitArgKeyVal(arg, delim)
 		if argKey == searchArg {
 			return argVal
 		}
 	}
-	logrus.Infof("XXXX Unknown: %v", arg)
+	logrus.Tracef("getArgValue (searchArg: %s, delim: %s) did not find searchArg in: %v", searchArg, delim, arg)
 	return ""
 }
 
+// convertInterfaceSliceToStringSlice converts an input interface slice to a string slice by iterating through the
+// interface slice and converting each entry to a string using Sprintf.
 func convertInterfaceSliceToStringSlice(input []interface{}) []string {
 	var stringArr []string
 	for _, v := range input {
-		stringArr = append(stringArr, fmt.Sprintf("%s", v))
+		stringArr = append(stringArr, v.(string))
 	}
 	return stringArr
 }
 
 // appendToInterface will return an interface that has the value appended to it. The interface returned will always be
 // a slice of strings, and will convert a raw string to a slice of strings.
-func appendToInterface(entry interface{}, value string) []string {
-	switch entry := entry.(type) {
+func appendToInterface(iface interface{}, elem string) []string {
+	switch iface := iface.(type) {
 	case []interface{}:
-		stringArr := convertInterfaceSliceToStringSlice(entry)
-		return appendToInterface(stringArr, value)
+		stringArr := convertInterfaceSliceToStringSlice(iface)
+		return appendToInterface(stringArr, elem)
 	case []string:
-		return append(entry, value)
+		return append(iface, elem)
 	case string:
-		return []string{entry, value}
+		return []string{iface, elem}
 	}
-	return []string{value}
+	return []string{elem}
 }
 
 func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControlPlane, machine *capi.Machine, initNode bool, joinServer string) {
@@ -770,25 +771,20 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 	// If this is a control-plane node, then we need to set arguments/(and for RKE2, volume mounts) to allow probes
 	// to run.
 	if isControlPlane(machine) {
-		logrus.Infof("XXXX Is Control Plane Machine")
 		renderedKubeControllerManagerCertDir := fmt.Sprintf(DefaultKubeControllerManagerCertDir, runtime)
 		rke2KCMCertDirMount := fmt.Sprintf("%s:%s", renderedKubeControllerManagerCertDir, renderedKubeControllerManagerCertDir)
 		kcmCertDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedKubeControllerManagerCertDir)
 		kcmSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, DefaultKubeControllerManagerDefaultSecurePort)
 		if v, ok := config[KubeControllerManagerArg]; ok {
-			logrus.Infof("XXXX KCM Arg : %s", v)
 			tlsCF := getArgValue(v, TLSCertFileArgument, "=")
-			logrus.Infof("XXXX KCM TLSCF : %s", tlsCF)
 			if tlsCF == "" {
 				certDir := getArgValue(v, CertDirArgument, "=")
-				logrus.Infof("XXXX KCM certDir : %s", certDir)
 				if certDir == "" {
 					config[KubeControllerManagerArg] = appendToInterface(config[KubeControllerManagerArg], kcmCertDirArg)
 					if runtime == rancherruntime.RuntimeRKE2 {
 						config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], rke2KCMCertDirMount)
 					}
 				} else {
-					logrus.Infof("CertDir passed in was: %s", certDir)
 					if runtime == rancherruntime.RuntimeRKE2 {
 						config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], fmt.Sprintf("%s:%s", certDir, certDir))
 					}
@@ -800,12 +796,10 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 				}
 			}
 			sPA := getArgValue(v, SecurePortArgument, "=")
-			logrus.Infof("XXXX KCM sPA : %s", sPA)
 			if sPA == "" {
 				config[KubeControllerManagerArg] = appendToInterface(config[KubeControllerManagerArg], kcmSecurePortArg)
 			}
 		} else {
-			logrus.Info("XXXX KCM Arg not found")
 			config[KubeControllerManagerArg] = []string{kcmCertDirArg, kcmSecurePortArg}
 			if runtime == rancherruntime.RuntimeRKE2 {
 				config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], rke2KCMCertDirMount)
