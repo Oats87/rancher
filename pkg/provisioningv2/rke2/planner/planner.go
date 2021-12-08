@@ -74,15 +74,15 @@ const (
 
 	SecretTypeMachinePlan = "rke.cattle.io/machine-plan"
 
-	KubeControllerManagerArg               = "kube-controller-manager-arg"
-	KubeControllerManagerCertDir           = "/var/lib/rancher/%s/server/tls/kube-controller-manager"
-	KubeControllerManagerDefaultSecurePort = "10257"
-	KubeSchedulerArg                       = "kube-scheduler-arg"
-	KubeSchedulerCertDir                   = "/var/lib/rancher/%s/server/tls/kube-scheduler"
-	KubeSchedulerDefaultSecurePort         = "10259"
-	SecurePortArgument                     = "secure-port"
-	CertDirArgument                        = "cert-dir"
-	TLSCertFileArgument                    = "tls-cert-file"
+	KubeControllerManagerArg                      = "kube-controller-manager-arg"
+	DefaultKubeControllerManagerCertDir           = "/var/lib/rancher/%s/server/tls/kube-controller-manager"
+	DefaultKubeControllerManagerDefaultSecurePort = "10257"
+	KubeSchedulerArg                              = "kube-scheduler-arg"
+	DefaultKubeSchedulerCertDir                   = "/var/lib/rancher/%s/server/tls/kube-scheduler"
+	DefaultKubeSchedulerDefaultSecurePort         = "10259"
+	SecurePortArgument                            = "secure-port"
+	CertDirArgument                               = "cert-dir"
+	TLSCertFileArgument                           = "tls-cert-file"
 
 	authnWebhookFileName = "/var/lib/rancher/%s/kube-api-authn-webhook.yaml"
 	ConfigYamlFileName   = "/etc/rancher/%s/config.yaml.d/50-rancher.yaml"
@@ -700,13 +700,13 @@ func splitArgKeyVal(val string, delim string) (string, string) {
 // returns the value of the argument, otherwise it returns an empty string.
 func getArgValue(arg interface{}, searchArg string, delim string) string {
 	logrus.Infof("Type of %v is %T", arg, arg)
-	switch arg.(type) {
+	switch arg := arg.(type) {
 	case []interface{}:
-		stringArr := convertInterfaceSliceToStringSlice(arg.([]interface{}))
+		stringArr := convertInterfaceSliceToStringSlice(arg)
 		return getArgValue(stringArr, searchArg, delim)
 	case []string:
 		logrus.Infof("XXXX String array: %v", arg)
-		for _, v := range arg.([]string) {
+		for _, v := range arg {
 			argKey, argVal := splitArgKeyVal(v, delim)
 			if argKey == searchArg {
 				return argVal
@@ -714,7 +714,7 @@ func getArgValue(arg interface{}, searchArg string, delim string) string {
 		}
 	case string:
 		logrus.Infof("XXXX String: %v", arg)
-		argKey, argVal := splitArgKeyVal(arg.(string), delim)
+		argKey, argVal := splitArgKeyVal(arg, delim)
 		if argKey == searchArg {
 			return argVal
 		}
@@ -733,15 +733,15 @@ func convertInterfaceSliceToStringSlice(input []interface{}) []string {
 
 // appendToInterface will return an interface that has the value appended to it. The interface returned will always be
 // a slice of strings, and will convert a raw string to a slice of strings.
-func appendToInterface(entry interface{}, value string) interface{} {
-	switch entry.(type) {
+func appendToInterface(entry interface{}, value string) []string {
+	switch entry := entry.(type) {
 	case []interface{}:
-		stringArr := convertInterfaceSliceToStringSlice(entry.([]interface{}))
+		stringArr := convertInterfaceSliceToStringSlice(entry)
 		return appendToInterface(stringArr, value)
 	case []string:
-		return append(entry.([]string), value)
+		return append(entry, value)
 	case string:
-		return []string{entry.(string), value}
+		return []string{entry, value}
 	}
 	return []string{value}
 }
@@ -771,10 +771,10 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 	// to run.
 	if isControlPlane(machine) {
 		logrus.Infof("XXXX Is Control Plane Machine")
-		renderedKubeControllerManagerCertDir := fmt.Sprintf(KubeControllerManagerCertDir, runtime)
+		renderedKubeControllerManagerCertDir := fmt.Sprintf(DefaultKubeControllerManagerCertDir, runtime)
 		rke2KCMCertDirMount := fmt.Sprintf("%s:%s", renderedKubeControllerManagerCertDir, renderedKubeControllerManagerCertDir)
 		kcmCertDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedKubeControllerManagerCertDir)
-		kcmSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, KubeControllerManagerDefaultSecurePort)
+		kcmSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, DefaultKubeControllerManagerDefaultSecurePort)
 		if v, ok := config[KubeControllerManagerArg]; ok {
 			logrus.Infof("XXXX KCM Arg : %s", v)
 			tlsCF := getArgValue(v, TLSCertFileArgument, "=")
@@ -812,10 +812,10 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 			}
 		}
 
-		renderedKubeSchedulerCertDir := fmt.Sprintf(KubeSchedulerCertDir, runtime)
+		renderedKubeSchedulerCertDir := fmt.Sprintf(DefaultKubeSchedulerCertDir, runtime)
 		rke2KSCertDirMount := fmt.Sprintf("%s:%s", renderedKubeSchedulerCertDir, renderedKubeSchedulerCertDir)
 		ksCertDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedKubeSchedulerCertDir)
-		ksSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, KubeSchedulerDefaultSecurePort)
+		ksSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, DefaultKubeSchedulerDefaultSecurePort)
 		if v, ok := config[KubeSchedulerArg]; ok {
 			tlsCF := getArgValue(v, TLSCertFileArgument, "=")
 			if tlsCF == "" {

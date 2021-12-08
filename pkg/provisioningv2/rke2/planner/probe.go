@@ -114,13 +114,13 @@ func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEContr
 	if isControlPlane(machine) {
 		kcmSecurePort := getArgValue(config[KubeControllerManagerArg], SecurePortArgument, "=")
 		if kcmSecurePort == "" {
-			kcmSecurePort = KubeControllerManagerDefaultSecurePort
+			kcmSecurePort = DefaultKubeControllerManagerDefaultSecurePort
 		}
 		kcmTLSCert := getArgValue(config[KubeControllerManagerArg], TLSCertFileArgument, "=")
 		if kcmTLSCert == "" {
 			kcmCertDir := getArgValue(config[KubeControllerManagerArg], CertDirArgument, "=")
 			if kcmCertDir == "" {
-				kcmCertDir = fmt.Sprintf(KubeControllerManagerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
+				kcmCertDir = fmt.Sprintf(DefaultKubeControllerManagerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
 			}
 			// we can use the kube-controller-manager cert-dir value and port
 			kcmProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-controller-manager"], kcmCertDir+"/kube-controller-manager.crt", kcmSecurePort)
@@ -139,13 +139,13 @@ func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEContr
 
 		ksSecurePort := getArgValue(config[KubeSchedulerArg], SecurePortArgument, "=")
 		if ksSecurePort == "" {
-			ksSecurePort = KubeSchedulerDefaultSecurePort
+			ksSecurePort = DefaultKubeSchedulerDefaultSecurePort
 		}
 		ksTLSCert := getArgValue(config[KubeSchedulerArg], TLSCertFileArgument, "=")
 		if ksTLSCert == "" {
 			ksCertDir := getArgValue(config[KubeSchedulerArg], CertDirArgument, "=")
 			if ksCertDir == "" {
-				ksCertDir = fmt.Sprintf(KubeSchedulerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
+				ksCertDir = fmt.Sprintf(DefaultKubeSchedulerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
 			}
 			// we can use the kube-scheduler cert-dir value and port
 			ksProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-scheduler"], ksCertDir+"/kube-scheduler.crt", ksSecurePort)
