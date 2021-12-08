@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"math"
 	"path/filepath"
 	"sort"
@@ -749,20 +750,25 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 	// If this is a control-plane node, then we need to set arguments/(and for RKE2, volume mounts) to allow probes
 	// to run.
 	if isControlPlane(machine) {
+		logrus.Infof("XXXX Is Control Plane Machine")
 		renderedKubeControllerManagerCertDir := fmt.Sprintf(KubeControllerManagerCertDir, runtime)
 		rke2KCMCertDirMount := fmt.Sprintf("%s:%s", renderedKubeControllerManagerCertDir, renderedKubeControllerManagerCertDir)
 		kcmCertDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedKubeControllerManagerCertDir)
 		kcmSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, KubeControllerManagerDefaultSecurePort)
 		if v, ok := config[KubeControllerManagerArg]; ok {
+			logrus.Infof("XXXX KCM Arg : %s", v)
 			tlsCF := getArgValue(v, TLSCertFileArgument, "=")
+			logrus.Infof("XXXX KCM TLSCF : %s", tlsCF)
 			if tlsCF == "" {
 				certDir := getArgValue(v, CertDirArgument, "=")
+				logrus.Infof("XXXX KCM certDir : %s", certDir)
 				if certDir == "" {
 					config[KubeControllerManagerArg] = appendToInterface(config[KubeControllerManagerArg], kcmCertDirArg)
 					if runtime == rancherruntime.RuntimeRKE2 {
 						config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], rke2KCMCertDirMount)
 					}
 				} else {
+					logrus.Infof("CertDir passed in was: %s", certDir)
 					if runtime == rancherruntime.RuntimeRKE2 {
 						config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], fmt.Sprintf("%s:%s", certDir, certDir))
 					}
@@ -774,10 +780,12 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 				}
 			}
 			sPA := getArgValue(v, SecurePortArgument, "=")
+			logrus.Infof("XXXX KCM sPA : %s", sPA)
 			if sPA == "" {
 				config[KubeControllerManagerArg] = appendToInterface(config[KubeControllerManagerArg], kcmSecurePortArg)
 			}
 		} else {
+			logrus.Info("XXXX KCM Arg not found")
 			config[KubeControllerManagerArg] = []string{kcmCertDirArg, kcmSecurePortArg}
 			if runtime == rancherruntime.RuntimeRKE2 {
 				config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], rke2KCMCertDirMount)
