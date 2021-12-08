@@ -699,7 +699,7 @@ func splitArgKeyVal(val string, delim string) (string, string) {
 // getArgValue will search the passed in interface (arg) for a key that matches the searchArg. If a match is found, it
 // returns the value of the argument, otherwise it returns an empty string.
 func getArgValue(arg interface{}, searchArg string, delim string) string {
-	logrus.Infof("Type of %v is %v", arg, arg.(type))
+	logrus.Infof("Type of %v is %T", arg, arg)
 	switch arg.(type) {
 	case []string:
 		logrus.Infof("XXXX String array: %v", arg)
