@@ -751,6 +751,8 @@ func appendToInterface(input interface{}, elem string) []string {
 	return []string{elem}
 }
 
+// convertInterfaceToStringSlice converts an input interface to a string slice by determining its type and converting
+// it accordingly. If it is not a known convertible type, an empty string slice is returned.
 func convertInterfaceToStringSlice(input interface{}) []string {
 	switch input := input.(type) {
 	case []interface{}:
@@ -763,6 +765,8 @@ func convertInterfaceToStringSlice(input interface{}) []string {
 	return []string{}
 }
 
+// renderArgAndMount takes the value of the existing value of the argument and mount and renders an output argument and
+// mount based on the value of the input interfaces. It will always return a set of slice of strings.
 func renderArgAndMount(existingArg interface{}, existingMount interface{}, runtime string, defaultSecurePort string, defaultCertDir string) ([]string, []string) {
 	retArg := convertInterfaceToStringSlice(existingArg)
 	retMount := convertInterfaceToStringSlice(existingMount)

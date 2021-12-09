@@ -81,6 +81,8 @@ func isCalico(controlPlane *rkev1.RKEControlPlane, runtime string) bool {
 		cni == "calico+multus"
 }
 
+// renderSecureProbe takes the existing argument value and renders a secure probe using the argument values and an error
+// if one occurred.
 func renderSecureProbe(arg interface{}, rawProbe plan.Probe, runtime string, defaultSecurePort string, defaultCert string, defaultCertDir string) (plan.Probe, error) {
 	securePort := getArgValue(arg, SecurePortArgument, "=")
 	if securePort == "" {
@@ -97,6 +99,8 @@ func renderSecureProbe(arg interface{}, rawProbe plan.Probe, runtime string, def
 	return replaceCACertAndPortForProbes(rawProbe, TLSCert, securePort)
 }
 
+// addProbes adds probes for the machine (based on type of machine) to the nodePlan and returns the nodePlan and an error
+// if one occurred.
 func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEControlPlane, machine *capi.Machine, config map[string]interface{}) (plan.NodePlan, error) {
 	var (
 		runtime    = rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion)
@@ -143,11 +147,12 @@ func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEContr
 	return nodePlan, nil
 }
 
-func replaceCACertAndPortForProbes(probe plan.Probe, cert, port string) (plan.Probe, error) {
-	if cert == "" || port == "" {
-		return plan.Probe{}, fmt.Errorf("cert (%s) or port (%s) not defined properly", cert, port)
+// replaceCACertAndPortForProbes adds/replaces the CACert and URL with rendered values based on the values provided.
+func replaceCACertAndPortForProbes(probe plan.Probe, cacert, port string) (plan.Probe, error) {
+	if cacert == "" || port == "" {
+		return plan.Probe{}, fmt.Errorf("CA cert (%s) or port (%s) not defined properly", cacert, port)
 	}
-	probe.HTTPGetAction.CACert = cert
+	probe.HTTPGetAction.CACert = cacert
 	probe.HTTPGetAction.URL = fmt.Sprintf(probe.HTTPGetAction.URL, port)
 	return probe, nil
 }
