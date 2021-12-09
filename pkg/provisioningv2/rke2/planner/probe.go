@@ -81,6 +81,22 @@ func isCalico(controlPlane *rkev1.RKEControlPlane, runtime string) bool {
 		cni == "calico+multus"
 }
 
+func renderSecureProbe(arg interface{}, rawProbe plan.Probe, runtime string, defaultSecurePort string, defaultCert string, defaultCertDir string) (plan.Probe, error) {
+	securePort := getArgValue(arg, SecurePortArgument, "=")
+	if securePort == "" {
+		securePort = defaultSecurePort
+	}
+	TLSCert := getArgValue(arg, TLSCertFileArgument, "=")
+	if TLSCert == "" {
+		certDir := getArgValue(arg, CertDirArgument, "=")
+		if certDir == "" {
+			certDir = fmt.Sprintf(defaultCertDir, runtime)
+		}
+		TLSCert = certDir + "/" + defaultCert
+	}
+	return replaceCACertAndPortForProbes(rawProbe, TLSCert, securePort)
+}
+
 func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEControlPlane, machine *capi.Machine, config map[string]interface{}) (plan.NodePlan, error) {
 	var (
 		runtime    = rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion)
@@ -112,56 +128,17 @@ func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEContr
 	nodePlan.Probes = replaceRuntimeForProbes(nodePlan.Probes, runtime)
 
 	if isControlPlane(machine) {
-		kcmSecurePort := getArgValue(config[KubeControllerManagerArg], SecurePortArgument, "=")
-		if kcmSecurePort == "" {
-			kcmSecurePort = DefaultKubeControllerManagerDefaultSecurePort
+		kcmProbe, err := renderSecureProbe(config[KubeControllerManagerArg], nodePlan.Probes["kube-controller-manager"], rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion), DefaultKubeControllerManagerCert, DefaultKubeControllerManagerDefaultSecurePort, DefaultKubeControllerManagerCertDir)
+		if err != nil {
+			return nodePlan, err
 		}
-		kcmTLSCert := getArgValue(config[KubeControllerManagerArg], TLSCertFileArgument, "=")
-		if kcmTLSCert == "" {
-			kcmCertDir := getArgValue(config[KubeControllerManagerArg], CertDirArgument, "=")
-			if kcmCertDir == "" {
-				kcmCertDir = fmt.Sprintf(DefaultKubeControllerManagerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
-			}
-			// we can use the kube-controller-manager cert-dir value and port
-			kcmProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-controller-manager"], kcmCertDir+"/kube-controller-manager.crt", kcmSecurePort)
-			if err != nil {
-				return nodePlan, err
-			}
-			nodePlan.Probes["kube-controller-manager"] = kcmProbe
-		} else {
-			// We need to use the kube-controller-manager TLS Cert and Port
-			kcmProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-controller-manager"], kcmTLSCert, kcmSecurePort)
-			if err != nil {
-				return nodePlan, err
-			}
-			nodePlan.Probes["kube-controller-manager"] = kcmProbe
-		}
+		nodePlan.Probes["kube-controller-manager"] = kcmProbe
 
-		ksSecurePort := getArgValue(config[KubeSchedulerArg], SecurePortArgument, "=")
-		if ksSecurePort == "" {
-			ksSecurePort = DefaultKubeSchedulerDefaultSecurePort
+		ksProbe, err := renderSecureProbe(config[KubeSchedulerArg], nodePlan.Probes["kube-scheduler"], rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion), DefaultKubeSchedulerCert, DefaultKubeSchedulerDefaultSecurePort, DefaultKubeSchedulerCertDir)
+		if err != nil {
+			return nodePlan, err
 		}
-		ksTLSCert := getArgValue(config[KubeSchedulerArg], TLSCertFileArgument, "=")
-		if ksTLSCert == "" {
-			ksCertDir := getArgValue(config[KubeSchedulerArg], CertDirArgument, "=")
-			if ksCertDir == "" {
-				ksCertDir = fmt.Sprintf(DefaultKubeSchedulerCertDir, rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion))
-			}
-			// we can use the kube-scheduler cert-dir value and port
-			ksProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-scheduler"], ksCertDir+"/kube-scheduler.crt", ksSecurePort)
-			if err != nil {
-				return nodePlan, err
-			}
-			nodePlan.Probes["kube-scheduler"] = ksProbe
-		} else {
-			// We need to use the kube-scheduler TLS Cert and Port
-			ksProbe, err := replaceCACertAndPortForProbes(nodePlan.Probes["kube-scheduler"], ksTLSCert, ksSecurePort)
-			if err != nil {
-				return nodePlan, err
-			}
-			nodePlan.Probes["kube-scheduler"] = ksProbe
-		}
-
+		nodePlan.Probes["kube-scheduler"] = ksProbe
 	}
 	return nodePlan, nil
 }

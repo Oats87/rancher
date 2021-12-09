@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"math"
 	"path/filepath"
 	"sort"
@@ -38,6 +37,7 @@ import (
 	"github.com/rancher/wrangler/pkg/randomtoken"
 	"github.com/rancher/wrangler/pkg/summary"
 	"github.com/rancher/wrangler/pkg/yaml"
+	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierror "k8s.io/apimachinery/pkg/api/errors"
@@ -75,11 +75,15 @@ const (
 	SecretTypeMachinePlan = "rke.cattle.io/machine-plan"
 
 	KubeControllerManagerArg                      = "kube-controller-manager-arg"
+	KubeControllerManagerExtraMount               = "kube-controller-manager-extra-mount"
 	DefaultKubeControllerManagerCertDir           = "/var/lib/rancher/%s/server/tls/kube-controller-manager"
 	DefaultKubeControllerManagerDefaultSecurePort = "10257"
+	DefaultKubeControllerManagerCert              = "kube-controller-manager.crt"
 	KubeSchedulerArg                              = "kube-scheduler-arg"
+	KubeSchedulerExtraMount                       = "kube-scheduler-extra-mount"
 	DefaultKubeSchedulerCertDir                   = "/var/lib/rancher/%s/server/tls/kube-scheduler"
 	DefaultKubeSchedulerDefaultSecurePort         = "10259"
+	DefaultKubeSchedulerCert                      = "kube-scheduler.crt"
 	SecurePortArgument                            = "secure-port"
 	CertDirArgument                               = "cert-dir"
 	TLSCertFileArgument                           = "tls-cert-file"
@@ -734,17 +738,66 @@ func convertInterfaceSliceToStringSlice(input []interface{}) []string {
 
 // appendToInterface will return an interface that has the value appended to it. The interface returned will always be
 // a slice of strings, and will convert a raw string to a slice of strings.
-func appendToInterface(iface interface{}, elem string) []string {
-	switch iface := iface.(type) {
+func appendToInterface(input interface{}, elem string) []string {
+	switch input := input.(type) {
 	case []interface{}:
-		stringArr := convertInterfaceSliceToStringSlice(iface)
+		stringArr := convertInterfaceSliceToStringSlice(input)
 		return appendToInterface(stringArr, elem)
 	case []string:
-		return append(iface, elem)
+		return append(input, elem)
 	case string:
-		return []string{iface, elem}
+		return []string{input, elem}
 	}
 	return []string{elem}
+}
+
+func convertInterfaceToStringSlice(input interface{}) []string {
+	switch input := input.(type) {
+	case []interface{}:
+		return convertInterfaceSliceToStringSlice(input)
+	case []string:
+		return input
+	case string:
+		return []string{input}
+	}
+	return []string{}
+}
+
+func renderArgAndMount(existingArg interface{}, existingMount interface{}, runtime string, defaultSecurePort string, defaultCertDir string) ([]string, []string) {
+	retArg := convertInterfaceToStringSlice(existingArg)
+	retMount := convertInterfaceToStringSlice(existingMount)
+	renderedCertDir := fmt.Sprintf(defaultCertDir, runtime)
+	certDirMount := fmt.Sprintf("%s:%s", renderedCertDir, renderedCertDir)
+	certDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedCertDir)
+	securePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, defaultSecurePort)
+	if len(retArg) > 0 {
+		tlsCF := getArgValue(retArg, TLSCertFileArgument, "=")
+		if tlsCF == "" {
+			certDir := getArgValue(retArg, CertDirArgument, "=")
+			if certDir != "" {
+				certDirArg = ""
+				certDirMount = fmt.Sprintf("%s:%s", certDir, certDir)
+			}
+		} else {
+			certDirArg = ""
+			dir := filepath.Dir(tlsCF)
+			certDirMount = fmt.Sprintf("%s:%s", dir, dir)
+		}
+		sPA := getArgValue(retArg, SecurePortArgument, "=")
+		if sPA != "" {
+			securePortArg = ""
+		}
+	}
+	if certDirArg != "" {
+		retArg = appendToInterface(existingArg, certDirArg)
+	}
+	if securePortArg != "" {
+		retArg = appendToInterface(retArg, securePortArg)
+	}
+	if runtime == rancherruntime.RuntimeRKE2 {
+		retMount = appendToInterface(existingMount, certDirMount)
+	}
+	return retArg, retMount
 }
 
 func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControlPlane, machine *capi.Machine, initNode bool, joinServer string) {
@@ -771,75 +824,18 @@ func addRoleConfig(config map[string]interface{}, controlPlane *rkev1.RKEControl
 	// If this is a control-plane node, then we need to set arguments/(and for RKE2, volume mounts) to allow probes
 	// to run.
 	if isControlPlane(machine) {
-		renderedKubeControllerManagerCertDir := fmt.Sprintf(DefaultKubeControllerManagerCertDir, runtime)
-		rke2KCMCertDirMount := fmt.Sprintf("%s:%s", renderedKubeControllerManagerCertDir, renderedKubeControllerManagerCertDir)
-		kcmCertDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedKubeControllerManagerCertDir)
-		kcmSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, DefaultKubeControllerManagerDefaultSecurePort)
-		if v, ok := config[KubeControllerManagerArg]; ok {
-			tlsCF := getArgValue(v, TLSCertFileArgument, "=")
-			if tlsCF == "" {
-				certDir := getArgValue(v, CertDirArgument, "=")
-				if certDir == "" {
-					config[KubeControllerManagerArg] = appendToInterface(config[KubeControllerManagerArg], kcmCertDirArg)
-					if runtime == rancherruntime.RuntimeRKE2 {
-						config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], rke2KCMCertDirMount)
-					}
-				} else {
-					if runtime == rancherruntime.RuntimeRKE2 {
-						config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], fmt.Sprintf("%s:%s", certDir, certDir))
-					}
-				}
-			} else {
-				if runtime == rancherruntime.RuntimeRKE2 {
-					dir := filepath.Dir(tlsCF)
-					config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], fmt.Sprintf("%s:%s", dir, dir))
-				}
-			}
-			sPA := getArgValue(v, SecurePortArgument, "=")
-			if sPA == "" {
-				config[KubeControllerManagerArg] = appendToInterface(config[KubeControllerManagerArg], kcmSecurePortArg)
-			}
-		} else {
-			config[KubeControllerManagerArg] = []string{kcmCertDirArg, kcmSecurePortArg}
-			if runtime == rancherruntime.RuntimeRKE2 {
-				config["kube-controller-manager-extra-mount"] = appendToInterface(config["kube-controller-manager-extra-mount"], rke2KCMCertDirMount)
-			}
+		certDirArg, certDirMount := renderArgAndMount(config[KubeControllerManagerArg], config[KubeControllerManagerExtraMount], runtime, DefaultKubeControllerManagerDefaultSecurePort, DefaultKubeControllerManagerCertDir)
+		config[KubeControllerManagerArg] = certDirArg
+		if runtime == rancherruntime.RuntimeRKE2 {
+			config[KubeControllerManagerExtraMount] = certDirMount
 		}
 
-		renderedKubeSchedulerCertDir := fmt.Sprintf(DefaultKubeSchedulerCertDir, runtime)
-		rke2KSCertDirMount := fmt.Sprintf("%s:%s", renderedKubeSchedulerCertDir, renderedKubeSchedulerCertDir)
-		ksCertDirArg := fmt.Sprintf("%s=%s", CertDirArgument, renderedKubeSchedulerCertDir)
-		ksSecurePortArg := fmt.Sprintf("%s=%s", SecurePortArgument, DefaultKubeSchedulerDefaultSecurePort)
-		if v, ok := config[KubeSchedulerArg]; ok {
-			tlsCF := getArgValue(v, TLSCertFileArgument, "=")
-			if tlsCF == "" {
-				certDir := getArgValue(v, CertDirArgument, "=")
-				if certDir == "" {
-					config[KubeSchedulerArg] = appendToInterface(config[KubeSchedulerArg], ksCertDirArg)
-					if runtime == rancherruntime.RuntimeRKE2 {
-						config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], rke2KSCertDirMount)
-					}
-				} else {
-					if runtime == rancherruntime.RuntimeRKE2 {
-						config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], fmt.Sprintf("%s:%s", certDir, certDir))
-					}
-				}
-			} else {
-				if runtime == rancherruntime.RuntimeRKE2 {
-					dir := filepath.Dir(tlsCF)
-					config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], fmt.Sprintf("%s:%s", dir, dir))
-				}
-			}
-			sPA := getArgValue(v, SecurePortArgument, "=")
-			if sPA == "" {
-				config[KubeSchedulerArg] = appendToInterface(config[KubeSchedulerArg], ksSecurePortArg)
-			}
-		} else {
-			config[KubeSchedulerArg] = []string{ksCertDirArg, ksSecurePortArg}
-			if runtime == rancherruntime.RuntimeRKE2 {
-				config["kube-scheduler-extra-mount"] = appendToInterface(config["kube-scheduler-extra-mount"], rke2KSCertDirMount)
-			}
+		certDirArg, certDirMount = renderArgAndMount(config[KubeSchedulerArg], config[KubeSchedulerExtraMount], runtime, DefaultKubeSchedulerDefaultSecurePort, DefaultKubeSchedulerCertDir)
+		config[KubeSchedulerArg] = certDirArg
+		if runtime == rancherruntime.RuntimeRKE2 {
+			config[KubeSchedulerExtraMount] = certDirMount
 		}
+
 	}
 
 	if nodeName := machine.Labels[NodeNameLabel]; nodeName != "" {
