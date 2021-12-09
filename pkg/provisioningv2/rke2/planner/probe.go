@@ -128,13 +128,13 @@ func (p *Planner) addProbes(nodePlan plan.NodePlan, controlPlane *rkev1.RKEContr
 	nodePlan.Probes = replaceRuntimeForProbes(nodePlan.Probes, runtime)
 
 	if isControlPlane(machine) {
-		kcmProbe, err := renderSecureProbe(config[KubeControllerManagerArg], nodePlan.Probes["kube-controller-manager"], rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion), DefaultKubeControllerManagerCert, DefaultKubeControllerManagerDefaultSecurePort, DefaultKubeControllerManagerCertDir)
+		kcmProbe, err := renderSecureProbe(config[KubeControllerManagerArg], nodePlan.Probes["kube-controller-manager"], rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion), DefaultKubeControllerManagerDefaultSecurePort, DefaultKubeControllerManagerCert, DefaultKubeControllerManagerCertDir)
 		if err != nil {
 			return nodePlan, err
 		}
 		nodePlan.Probes["kube-controller-manager"] = kcmProbe
 
-		ksProbe, err := renderSecureProbe(config[KubeSchedulerArg], nodePlan.Probes["kube-scheduler"], rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion), DefaultKubeSchedulerCert, DefaultKubeSchedulerDefaultSecurePort, DefaultKubeSchedulerCertDir)
+		ksProbe, err := renderSecureProbe(config[KubeSchedulerArg], nodePlan.Probes["kube-scheduler"], rancherruntime.GetRuntime(controlPlane.Spec.KubernetesVersion), DefaultKubeSchedulerDefaultSecurePort, DefaultKubeSchedulerCert, DefaultKubeSchedulerCertDir)
 		if err != nil {
 			return nodePlan, err
 		}
