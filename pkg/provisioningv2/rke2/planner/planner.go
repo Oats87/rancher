@@ -472,7 +472,7 @@ func (p *Planner) reconcile(controlPlane *rkev1.RKEControlPlane, tokensSecret pl
 		return err
 	}
 
-	logrus.Debugf("[planner] rkecluster %s/%s tierName %s: calculated concurrency: %d and unavailable: %d with maxUnavailable: %d", controlPlane.Namespace, controlPlane.Name, tierName, concurrency, unavailable, maxUnavailable)
+	logrus.Debugf("[planner] rkecluster %s/%s tierName %s: calculated concurrency: %d and unavailable: %d with maxUnavailable: %s", controlPlane.Namespace, controlPlane.Name, tierName, concurrency, unavailable, maxUnavailable)
 	for _, entry := range entries {
 		// we exclude here and not in collect to ensure that include matched at least one node
 		if exclude(entry) {
