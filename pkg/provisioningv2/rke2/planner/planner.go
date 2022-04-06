@@ -465,11 +465,14 @@ func (p *Planner) reconcile(controlPlane *rkev1.RKEControlPlane, tokensSecret pl
 
 	entries := collect(clusterPlan, include)
 
+	logrus.Debugf("[planner] rkecluster %s/%s tierName %s: collected %d entries", controlPlane.Namespace, controlPlane.Name, tierName, len(entries))
+
 	concurrency, unavailable, err := calculateConcurrency(maxUnavailable, entries, exclude)
 	if err != nil {
 		return err
 	}
 
+	logrus.Debugf("[planner] rkecluster %s/%s tierName %s: calculated concurrency: %d and unavailable: %d with maxUnavailable: %d", controlPlane.Namespace, controlPlane.Name, tierName, concurrency, unavailable, maxUnavailable)
 	for _, entry := range entries {
 		// we exclude here and not in collect to ensure that include matched at least one node
 		if exclude(entry) {
@@ -508,7 +511,8 @@ func (p *Planner) reconcile(controlPlane *rkev1.RKEControlPlane, tokensSecret pl
 			// the node is currently drained.
 			// 2. concurrency == 0 which means infinite concurrency.
 			// 3. unavailable < concurrency meaning we have capacity to make something unavailable
-			if isInDrain(entry) || concurrency == 0 || unavailable < concurrency {
+			// 4. the node is already unavailable
+			if isInDrain(entry) || concurrency == 0 || unavailable < concurrency || isUnavailable(entry) {
 				if !isUnavailable(entry) {
 					unavailable++
 				}
