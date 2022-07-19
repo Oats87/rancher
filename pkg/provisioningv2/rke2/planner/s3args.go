@@ -38,11 +38,9 @@ func S3Enabled(s3 *rkev1.ETCDSnapshotS3) bool {
 
 // ToArgs renders a slice of arguments and environment variables, as well as files (if S3 endpoints are required). If secretKeyInEnv is set to true, it will set the AWS_SECRET_ACCESS_KEY as an environment variable rather than as an argument.
 func (s *s3Args) ToArgs(s3 *rkev1.ETCDSnapshotS3, controlPlane *rkev1.RKEControlPlane, prefix string, secretKeyInEnv bool) (args []string, env []string, files []plan.File, err error) {
-	if s3 == nil {
-		return
-	}
-
-	if !S3Enabled(s3) {
+	if s3 == nil || !S3Enabled(s3) {
+		args = append(args,
+			fmt.Sprintf("--%ss3=false", prefix))
 		return
 	}
 
