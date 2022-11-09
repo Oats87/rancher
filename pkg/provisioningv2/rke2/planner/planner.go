@@ -409,7 +409,7 @@ func getControlPlaneJoinURL(plan *plan.Plan) string {
 	return entries[0].Metadata.Annotations[rke2.JoinURLAnnotation]
 }
 
-// isUnavailable returns a boolean indicating whether the machine/node corresponding to the planEntry is available
+// isUnavailable returns a boolean indicating whether the machine/node corresponding to the planEntry is available.
 // If the plan is not in sync or the machine is being drained, it will return true.
 func isUnavailable(entry *planEntry) bool {
 	return !entry.Plan.InSync || isInDrain(entry)
@@ -577,7 +577,7 @@ func (p *Planner) reconcile(controlPlane *rkev1.RKEControlPlane, tokensSecret pl
 			logrus.Debugf("[planner] rkecluster %s/%s reconcile tier %s - concurrency: %d, unavailable: %d", controlPlane.Namespace, controlPlane.Name, tierName, concurrency, unavailable)
 			if isInDrain(entry) || entry.Plan.Failed || concurrency == 0 || unavailable < concurrency || planAppliedButWaitingForProbes(entry) {
 				reconciling = append(reconciling, entry.Machine.Name)
-				if !isUnavailable(entry) {
+				if !isUnavailable(entry) { // this stops further entries from getting drained/reconciled
 					unavailable++
 				}
 				if ok, err := p.drain(entry.Plan.AppliedPlan, plan, entry, clusterPlan, drainOptions); !ok && err != nil {
@@ -661,6 +661,10 @@ func (p *Planner) reconcile(controlPlane *rkev1.RKEControlPlane, tokensSecret pl
 
 	if firstError != nil {
 		return firstError
+	}
+
+	if unavailable > 0 {
+		return ErrWaitingf("unavailable " + tierName + " machine(s)")
 	}
 
 	// The messages for these machines come from the machine itself, so nothing needs to be added.
