@@ -18,6 +18,7 @@ import (
 	"github.com/rancher/wrangler/pkg/apply"
 	"github.com/rancher/wrangler/pkg/generic"
 	"github.com/rancher/wrangler/pkg/yaml"
+	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -51,6 +52,17 @@ func Register(ctx context.Context, clients *wrangler.Context) {
 		"",
 		"fleet-cluster",
 		h.createCluster,
+		nil,
+	)
+
+	rocontrollers.RegisterClusterGeneratingHandler(ctx,
+		clients.Provisioning.Cluster(),
+		clients.Apply.
+			WithCacheTypes(clients.Fleet.Cluster(),
+				clients.Provisioning.Cluster()),
+		"",
+		"fleet-cluster-dos",
+		h.log,
 		nil,
 	)
 
@@ -93,6 +105,11 @@ func (h *handler) ensureAgentMigrated(key string, cluster *fleet.Cluster) (*flee
 		h.fleetClusters.EnqueueAfter(cluster.Namespace, cluster.Name, 5*time.Second)
 	}
 	return cluster, nil
+}
+
+func (h *handler) log(cluster *v1.Cluster, status v1.ClusterStatus) ([]runtime.Object, v1.ClusterStatus, error) {
+	logrus.Infof("XXXXXXXXXX This is a test! I just received a request to process %s/%s", cluster.Namespace, cluster.Name)
+	return []runtime.Object{}, status, nil
 }
 
 func (h *handler) createCluster(cluster *v1.Cluster, status v1.ClusterStatus) ([]runtime.Object, v1.ClusterStatus, error) {
