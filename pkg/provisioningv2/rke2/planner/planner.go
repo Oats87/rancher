@@ -987,10 +987,6 @@ func (p *Planner) ensureRKEStateSecret(controlPlane *rkev1.RKEControlPlane) (str
 		return "", plan.Secret{}, err
 	}
 
-	if secret.Type != rke2.SecretTypeClusterState {
-		return "", plan.Secret{}, fmt.Errorf("secret %s/%s type %s did not match expected type %s", secret.Namespace, secret.Name, secret.Type, rke2.SecretTypeClusterState)
-	}
-
 	return secret.Name, plan.Secret{
 		ServerToken: string(secret.Data["serverToken"]),
 		AgentToken:  string(secret.Data["agentToken"]),
