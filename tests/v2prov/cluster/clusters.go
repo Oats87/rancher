@@ -144,7 +144,7 @@ func WaitForCreate(clients *clients.Clients, c *provisioningv1api.Cluster) (_ *p
 
 	err = wait.Object(clients.Ctx, clients.Provisioning.Cluster().Watch, c, func(obj runtime.Object) (bool, error) {
 		c = obj.(*provisioningv1api.Cluster)
-		return c.Status.Ready, nil
+		return c.Status.ClusterName != "" && c.Status.Ready && c.Status.ObservedGeneration == c.Generation && capr.Ready.IsTrue(c), nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("prov cluster is not ready: %w", err)
@@ -156,6 +156,9 @@ func WaitForCreate(clients *clients.Clients, c *provisioningv1api.Cluster) (_ *p
 	}
 
 	for _, machine := range machines.Items {
+		if !machine.DeletionTimestamp.IsZero() {
+			continue
+		}
 		err = wait.Object(clients.Ctx, clients.CAPI.Machine().Watch, &machine, func(obj runtime.Object) (bool, error) {
 			machine = *obj.(*capi.Machine)
 			return machine.Status.NodeRef != nil, nil
