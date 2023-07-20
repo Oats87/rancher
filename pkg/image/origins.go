@@ -243,6 +243,7 @@ var OriginMap = map[string]string{
 	"windows_exporter-package":                                "https://github.com/rancher/windows_exporter-package",
 	"wins":                                                    "https://github.com/rancher/wins",
 	"wmi_exporter-package":                                    "https://github.com/rancher/wmi_exporter-package",
+	"cluster-api-controller":                                  "https://github.com/rancher/provisioning",
 }
 
 const (

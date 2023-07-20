@@ -129,7 +129,7 @@ func (h *handler) onRepo(key string, repo *catalog.ClusterRepo) (*catalog.Cluste
 }
 
 func (h *handler) getChartsToInstall() []*chart.Definition {
-	return []*chart.Definition{
+	charts := []*chart.Definition{
 		{
 			ReleaseNamespace:    namespace.System,
 			ChartName:           chart.WebhookChartName,
@@ -138,7 +138,7 @@ func (h *handler) getChartsToInstall() []*chart.Definition {
 			Values: func() map[string]interface{} {
 				values := map[string]interface{}{
 					"capi": map[string]interface{}{
-						"enabled": features.EmbeddedClusterAPI.Enabled(),
+						"enabled": "false",
 					},
 					"mcm": map[string]interface{}{
 						"enabled": features.MCM.Enabled(),
@@ -170,6 +170,33 @@ func (h *handler) getChartsToInstall() []*chart.Definition {
 			RemoveNamespace:  true,
 		},
 	}
+	if features.EmbeddedClusterAPI.Enabled() {
+		charts = append(charts, &chart.Definition{
+			ReleaseNamespace: namespace.System,
+			ChartName:        chart.ProvisioningCAPIChartName,
+			Values: func() map[string]interface{} {
+				values := map[string]interface{}{}
+				// add priority class value
+				if priorityClassName, err := h.chartsConfig.GetGlobalValue(chart.PriorityClassKey); err != nil {
+					if !chart.IsNotFoundError(err) {
+						logrus.Warnf("Failed to get rancher %s for 'rancher-webhook': %s", chart.PriorityClassKey, err.Error())
+					}
+				} else {
+					values[priorityClassKey] = priorityClassName
+				}
+
+				// get custom values for the rancher-provisioning-capi
+				configMapValues, err := h.chartsConfig.GetChartValues(chart.ProvisioningCAPIChartName)
+				if err != nil && !chart.IsNotFoundError(err) {
+					logrus.Warnf("Failed to get rancher rancherWebhookValues %s", err.Error())
+				}
+
+				return data.MergeMaps(values, configMapValues)
+			},
+			Enabled: func() bool { return true },
+		})
+	}
+	return charts
 }
 
 func relatedFeatures(_, _ string, obj runtime.Object) ([]relatedresource.Key, error) {
