@@ -300,7 +300,13 @@ func mgmtClusterName() (string, error) {
 func (h *handler) createNewCluster(cluster *v1.Cluster, status v1.ClusterStatus, spec v3.ClusterSpec) ([]runtime.Object, v1.ClusterStatus, error) {
 	spec.DisplayName = cluster.Name
 	spec.Description = cluster.Annotations["field.cattle.io/description"]
-	spec.FleetWorkspaceName = cluster.Namespace
+	if cluster.Annotations["fleet.cattle.io/workspace"] != "" { // force set the fleet workspace name based on annotation
+		spec.FleetWorkspaceName = cluster.Annotations["fleet.cattle.io/workspace"]
+	} else if status.FleetWorkspaceName != "" { // otherwise, use the fleet workspace name based on the status
+		spec.FleetWorkspaceName = status.FleetWorkspaceName
+	} else {
+		spec.FleetWorkspaceName = cluster.Namespace
+	}
 	spec.DefaultPodSecurityPolicyTemplateName = cluster.Spec.DefaultPodSecurityPolicyTemplateName
 	spec.DefaultPodSecurityAdmissionConfigurationTemplateName = cluster.Spec.DefaultPodSecurityAdmissionConfigurationTemplateName
 	spec.DefaultClusterRoleForProjectMembers = cluster.Spec.DefaultClusterRoleForProjectMembers
@@ -422,6 +428,8 @@ func (h *handler) updateStatus(objs []runtime.Object, cluster *v1.Cluster, statu
 			}
 		}
 		status.AgentDeployed = v3.ClusterConditionAgentDeployed.IsTrue(existing)
+		status.FleetWorkspaceName = existing.Spec.FleetWorkspaceName
+		// this is going to fight if a user tries to change the fleet workspace name after creating the cluster
 	}
 
 	// Never set ready back to false because we will end up deleting the secret
