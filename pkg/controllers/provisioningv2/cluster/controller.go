@@ -377,6 +377,13 @@ func (h *handler) createNewCluster(cluster *v1.Cluster, status v1.ClusterStatus,
 
 	delete(cluster.Annotations, creatorIDAnn)
 
+	existing, err := h.mgmtClusterCache.Get(newCluster.Name)
+	if err != nil && !apierror.IsNotFound(err) {
+		return nil, status, err
+	} else if err == nil {
+		newCluster.Spec.FleetWorkspaceName = existing.Spec.FleetWorkspaceName
+	}
+
 	normalizedCluster, err := NormalizeCluster(newCluster, cluster.Spec.RKEConfig == nil)
 	if err != nil {
 		return nil, status, err
@@ -429,7 +436,7 @@ func (h *handler) updateStatus(objs []runtime.Object, cluster *v1.Cluster, statu
 		}
 		status.AgentDeployed = v3.ClusterConditionAgentDeployed.IsTrue(existing)
 		status.FleetWorkspaceName = existing.Spec.FleetWorkspaceName
-		// this is going to fight if a user tries to change the fleet workspace name after creating the cluster
+		// TODO: this is going to fight if a user tries to change the fleet workspace name after creating the cluster
 	}
 
 	// Never set ready back to false because we will end up deleting the secret
