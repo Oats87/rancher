@@ -92,6 +92,7 @@ const (
 	CattleOSLabel    = "cattle.io/os"
 	DefaultMachineOS = "linux"
 	WindowsMachineOS = "windows"
+	MachineIDHeader  = "X-Cattle-Id"
 
 	DefaultMachineConfigAPIVersion = "rke-machine-config.cattle.io/v1"
 	RKEMachineAPIVersion           = "rke-machine.cattle.io/v1"

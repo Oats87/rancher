@@ -1,14 +1,21 @@
 package configserver
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rancher/rancher/pkg/capr"
+	"github.com/rancher/rancher/pkg/capr/configserver"
+	"github.com/rancher/rancher/pkg/capr/planner"
 	capicontrollers "github.com/rancher/rancher/pkg/generated/controllers/cluster.x-k8s.io/v1beta1"
+	provisioningcontrollers "github.com/rancher/rancher/pkg/generated/controllers/provisioning.cattle.io/v1"
 	rkecontroller "github.com/rancher/rancher/pkg/generated/controllers/rke.cattle.io/v1"
+	v1 "github.com/rancher/rancher/pkg/generated/norman/core/v1"
+	"github.com/rancher/rancher/pkg/serviceaccounttoken"
 	"github.com/rancher/rancher/pkg/wrangler"
 	corecontrollers "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
 	"github.com/sirupsen/logrus"
@@ -19,44 +26,68 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 const (
-	ConnectAgent = "/v3/connect/agent"
+	ConnectClusterInfo    = "/v3/connect/cluster-info"
+	ConnectConfigYamlPath = "/v3/connect/config-yaml"
+	MachineIDHeader       = "X-Cattle-Id"
+	HeaderPrefix          = "X-Cattle-"
 )
 
-type CAPRConfigServer struct {
-	serviceAccountsCache corecontrollers.ServiceAccountCache
-	serviceAccounts      corecontrollers.ServiceAccountClient
-	secretsCache         corecontrollers.SecretCache
-	secrets              corecontrollers.SecretController
-	machineCache         capicontrollers.MachineCache
-	machines             capicontrollers.MachineClient
-	bootstrapCache       rkecontroller.RKEBootstrapCache
-	k8s                  kubernetes.Interface
-	resolver             Resolver
-	informers            map[string]cache.SharedIndexInformer
+type RancherCAPRConfigServer struct {
+	serviceAccountsCache     corecontrollers.ServiceAccountCache
+	serviceAccounts          corecontrollers.ServiceAccountClient
+	secretsCache             corecontrollers.SecretCache
+	secrets                  corecontrollers.SecretController
+	machineCache             capicontrollers.MachineCache
+	machines                 capicontrollers.MachineClient
+	bootstrapCache           rkecontroller.RKEBootstrapCache
+	provisioningClusterCache provisioningcontrollers.ClusterCache
+	k8s                      kubernetes.Interface
+	informers                map[string]cache.SharedIndexInformer
+
+	resolver configserver.Resolver
 }
 
-func New(clients *wrangler.Context, resolver Resolver, informers map[string]cache.SharedIndexInformer) *CAPRConfigServer {
-	return &CAPRConfigServer{
-		serviceAccountsCache: clients.Core.ServiceAccount().Cache(),
-		serviceAccounts:      clients.Core.ServiceAccount(),
-		secretsCache:         clients.Core.Secret().Cache(),
-		secrets:              clients.Core.Secret(),
-		machineCache:         clients.CAPI.Machine().Cache(),
-		machines:             clients.CAPI.Machine(),
-		bootstrapCache:       clients.RKE.RKEBootstrap().Cache(),
-		k8s:                  clients.K8s,
-		resolver:             resolver,
-		informers:            informers,
+func New(clients *wrangler.Context, resolver configserver.Resolver, informers map[string]cache.SharedIndexInformer) *RancherCAPRConfigServer {
+	return &RancherCAPRConfigServer{
+		serviceAccountsCache:     clients.Core.ServiceAccount().Cache(),
+		serviceAccounts:          clients.Core.ServiceAccount(),
+		secretsCache:             clients.Core.Secret().Cache(),
+		secrets:                  clients.Core.Secret(),
+		machineCache:             clients.CAPI.Machine().Cache(),
+		machines:                 clients.CAPI.Machine(),
+		bootstrapCache:           clients.RKE.RKEBootstrap().Cache(),
+		provisioningClusterCache: clients.Provisioning.Cluster().Cache(),
+		k8s:                      clients.K8s,
+		informers:                informers,
+		resolver:                 resolver,
 	}
 }
 
-func (r *CAPRConfigServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+func DataFromHeaders(req *http.Request) map[string]interface{} {
+	data := make(map[string]interface{})
+	for k, v := range req.Header {
+		if strings.HasPrefix(k, HeaderPrefix) {
+			data[strings.ToLower(strings.TrimPrefix(k, HeaderPrefix))] = v
+		}
+	}
+
+	return data
+}
+
+func (r *RancherCAPRConfigServer) getKubernetesVersion(clusterName, ns string) (string, error) {
+	cluster, err := r.provisioningClusterCache.Get(ns, clusterName)
+	if err != nil {
+		return "", err
+	}
+
+	return cluster.Spec.KubernetesVersion, nil
+}
+
+func (r *RancherCAPRConfigServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	var informerNotReady bool
 	for informerName, informer := range r.informers {
 		if !informer.HasSynced() {
@@ -83,55 +114,102 @@ func (r *CAPRConfigServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) 
 	}
 
 	switch req.URL.Path {
-	case ConnectAgent:
-		r.connectAgent(planSecret, secret, rw, req)
+	case ConnectConfigYamlPath:
+		r.connectConfigYaml(planSecret, secret.Namespace, rw)
+	case ConnectClusterInfo:
+		r.connectClusterInfo(secret, rw, req)
 	}
 }
 
-func (r *CAPRConfigServer) connectAgent(planSecret string, secret *corev1.Secret, rw http.ResponseWriter, req *http.Request) {
-	url, ca := r.resolver.GetServerURLAndCertificateByRequest(req)
-
-	if url == "" {
-		http.Error(rw, "unable to determine server URL", http.StatusInternalServerError)
+func (r *RancherCAPRConfigServer) connectConfigYaml(name, ns string, rw http.ResponseWriter) {
+	mpSecret, err := r.getMachinePlanSecret(ns, name)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	kubeConfig, err := clientcmd.Write(clientcmdapi.Config{
-		Clusters: map[string]*clientcmdapi.Cluster{
-			"agent": {
-				Server:                   url,
-				CertificateAuthorityData: ca,
-			},
-		},
-		AuthInfos: map[string]*clientcmdapi.AuthInfo{
-			"agent": {
-				Token: string(secret.Data["token"]),
-			},
-		},
-		Contexts: map[string]*clientcmdapi.Context{
-			"agent": {
-				Cluster:  "agent",
-				AuthInfo: "agent",
-			},
-		},
-		CurrentContext: "agent",
-	})
+	config := make(map[string]interface{})
+	if err := json.Unmarshal(mpSecret.Data[capr.RolePlan], &config); err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if _, ok := config["files"]; !ok {
+		http.Error(rw, "no files in the plan", http.StatusInternalServerError)
+		return
+	}
+
+	kubernetesVersion, err := r.getKubernetesVersion(mpSecret.Labels[capi.ClusterNameLabel], ns)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var content string
+	for _, f := range config["files"].([]interface{}) {
+		f := f.(map[string]interface{})
+		if path, ok := f["path"].(string); ok && path == fmt.Sprintf(planner.ConfigYamlFileName, capr.GetRuntime(kubernetesVersion)) {
+			if _, ok := f["content"]; ok {
+				content = f["content"].(string)
+			}
+		}
+	}
+
+	if content == "" {
+		http.Error(rw, "no config content", http.StatusInternalServerError)
+		return
+	}
+
+	jsonContent, err := base64.StdEncoding.DecodeString(content)
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	rw.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(rw)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(map[string]string{
-		"namespace":  secret.Namespace,
-		"secretName": planSecret,
-		"kubeConfig": string(kubeConfig),
-	})
+	rw.Write(jsonContent)
 }
 
-func (r *CAPRConfigServer) findMachineByID(machineID, ns string) (*capi.Machine, error) {
+func (r *RancherCAPRConfigServer) connectClusterInfo(secret *v1.Secret, rw http.ResponseWriter, req *http.Request) {
+	headers := DataFromHeaders(req)
+
+	// expecting -H "X-Cattle-Field: kubernetesversion" -H "X-Cattle-Field: name"
+	fields, ok := headers["field"]
+	if !ok {
+		http.Error(rw, "no field headers", http.StatusInternalServerError)
+		return
+	}
+
+	castedFields, ok := fields.([]string)
+	if !ok || len(castedFields) == 0 {
+		http.Error(rw, "no field headers", http.StatusInternalServerError)
+		return
+	}
+
+	var info = make(map[string]string)
+	for _, f := range castedFields {
+		switch strings.ToLower(f) {
+		case "kubernetesversion":
+			k8sv, err := r.infoKubernetesVersion(req.Header.Get(MachineIDHeader), secret.Namespace)
+			if err != nil {
+				http.Error(rw, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			info[f] = k8sv
+		}
+	}
+
+	jsonContent, err := json.Marshal(info)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rw.Header().Set("Content-Type", "application/json")
+	rw.Write(jsonContent)
+}
+
+func (r *RancherCAPRConfigServer) findMachineByID(machineID, ns string) (*capi.Machine, error) {
 	machines, err := r.machineCache.List(ns, labels.SelectorFromSet(map[string]string{
 		capr.MachineIDLabel: machineID,
 	}))
@@ -146,9 +224,26 @@ func (r *CAPRConfigServer) findMachineByID(machineID, ns string) (*capi.Machine,
 	return machines[0], nil
 }
 
+func (r *RancherCAPRConfigServer) infoKubernetesVersion(machineID, ns string) (string, error) {
+	if machineID == "" {
+		return "", nil
+	}
+	machine, err := r.findMachineByID(machineID, ns)
+	if err != nil {
+		return "", err
+	}
+
+	clusterName, ok := machine.Labels[capi.ClusterNameLabel]
+	if !ok {
+		return "", fmt.Errorf("unable to find cluster name for machine")
+	}
+
+	return r.getKubernetesVersion(clusterName, ns)
+}
+
 // findSA uses the request machineID to find and deliver the plan secret name and a service account token (or an error).
-func (r *CAPRConfigServer) findSA(req *http.Request) (string, *corev1.Secret, error) {
-	machineID := req.Header.Get(capr.MachineIDHeader)
+func (r *RancherCAPRConfigServer) findSA(req *http.Request) (string, *corev1.Secret, error) {
+	machineID := req.Header.Get(MachineIDHeader)
 	logrus.Debugf("[rke2configserver] parsed %s as machineID", machineID)
 	if machineID == "" {
 		return "", nil, nil
@@ -265,7 +360,9 @@ func (r *CAPRConfigServer) findSA(req *http.Request) (string, *corev1.Secret, er
 	logrus.Debugf("[rke2configserver] %s/%s starting token secret watch for planSA %s/%s", machineNamespace, machineName, planSA.Namespace, planSA.Name)
 	// start watch for the planSA corresponding secret, using a label selector.
 	respSecret, err := r.secrets.Watch(machineNamespace, metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("%s=%s", "type", corev1.SecretTypeServiceAccountToken),
+		LabelSelector: labels.Set{
+			serviceaccounttoken.ServiceAccountSecretLabel: planSA.Name,
+		}.String(),
 	})
 	if err != nil {
 		return "", nil, err
@@ -277,9 +374,6 @@ func (r *CAPRConfigServer) findSA(req *http.Request) (string, *corev1.Secret, er
 	}()
 	for event := range respSecret.ResultChan() {
 		if secret, ok := event.Object.(*corev1.Secret); ok {
-			if secret.Annotations[corev1.ServiceAccountNameKey] != planSA.Name {
-				continue
-			}
 			logrus.Infof("[rke2configserver] %s/%s machineID: %s delivering planSecret %s with token secret %s/%s to system-agent from secret watch", machineNamespace, machineName, machineID, planSecret, secret.Namespace, secret.Name)
 			return planSecret, secret, nil
 		}
@@ -288,7 +382,7 @@ func (r *CAPRConfigServer) findSA(req *http.Request) (string, *corev1.Secret, er
 	return "", nil, fmt.Errorf("timeout waiting for plan")
 }
 
-func (r *CAPRConfigServer) setOrUpdateMachineID(machineNamespace, machineName, machineID string) error {
+func (r *RancherCAPRConfigServer) setOrUpdateMachineID(machineNamespace, machineName, machineID string) error {
 	machine, err := r.machineCache.Get(machineNamespace, machineName)
 	if err != nil {
 		return err
@@ -309,14 +403,14 @@ func (r *CAPRConfigServer) setOrUpdateMachineID(machineNamespace, machineName, m
 	return err
 }
 
-func (r *CAPRConfigServer) getMachinePlanSecret(ns, name string) (*corev1.Secret, error) {
+func (r *RancherCAPRConfigServer) getMachinePlanSecret(ns, name string) (*v1.Secret, error) {
 	backoff := wait.Backoff{
 		Duration: 500 * time.Millisecond,
 		Factor:   2,
 		Steps:    10,
 		Cap:      2 * time.Second,
 	}
-	var secret *corev1.Secret
+	var secret *v1.Secret
 	return secret, wait.ExponentialBackoff(backoff, func() (bool, error) {
 		var err error
 		secret, err = r.secretsCache.Get(name, ns)

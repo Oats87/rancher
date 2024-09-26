@@ -1,4 +1,4 @@
-package configserver
+package configserverresolver
 
 import (
 	"net/http"
@@ -8,7 +8,7 @@ import (
 	api "k8s.io/api/core/v1"
 )
 
-func (r *RKE2ConfigServer) findMachineByProvisioningSA(req *http.Request) (string, string, error) {
+func (r *RancherResolver) findMachineByProvisioningSA(req *http.Request) (string, string, error) {
 	token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
 	secrets, err := r.secretsCache.GetByIndex(tokenIndex, token)
 	if err != nil || len(secrets) == 0 {

@@ -1,4 +1,4 @@
-package configserver
+package configserverresolver
 
 import (
 	"crypto/sha256"
@@ -9,25 +9,19 @@ import (
 	"strings"
 
 	"github.com/rancher/rancher/pkg/capr"
+	"github.com/rancher/rancher/pkg/capr-rancher/configserver"
 	corev1 "k8s.io/api/core/v1"
 	apierror "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	capi "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
-const (
-	machineIDHeader = "X-Cattle-Id"
-	headerPrefix    = "X-Cattle-"
-)
-
-func (r *RKE2ConfigServer) findMachineByClusterToken(req *http.Request) (string, string, error) {
+func (r *RancherResolver) findMachineByClusterToken(req *http.Request) (string, string, error) {
 	token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
 	if token == "" {
 		return "", "", nil
 	}
 
-	machineID := req.Header.Get(machineIDHeader)
+	machineID := req.Header.Get(capr.MachineIDHeader)
 	if machineID == "" {
 		return "", "", nil
 	}
@@ -37,7 +31,7 @@ func (r *RKE2ConfigServer) findMachineByClusterToken(req *http.Request) (string,
 		return "", "", err
 	}
 
-	data := dataFromHeaders(req)
+	data := configserver.DataFromHeaders(req)
 
 	if len(tokens) == 0 {
 		return "", "", nil
@@ -62,22 +56,7 @@ func (r *RKE2ConfigServer) findMachineByClusterToken(req *http.Request) (string,
 	return machineNamespace, machineName, nil
 }
 
-func (r *RKE2ConfigServer) findMachineByID(machineID, ns string) (*capi.Machine, error) {
-	machines, err := r.machineCache.List(ns, labels.SelectorFromSet(map[string]string{
-		capr.MachineIDLabel: machineID,
-	}))
-	if err != nil {
-		return nil, err
-	}
-
-	if len(machines) != 1 {
-		return nil, fmt.Errorf("unable to find machine %s, found %d machine(s)", machineID, len(machines))
-	}
-
-	return machines[0], nil
-}
-
-func (r *RKE2ConfigServer) createSecret(namespace, name string, data map[string]interface{}) (*corev1.Secret, error) {
+func (r *RancherResolver) createSecret(namespace, name string, data map[string]interface{}) (*corev1.Secret, error) {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
@@ -96,7 +75,7 @@ func (r *RKE2ConfigServer) createSecret(namespace, name string, data map[string]
 	})
 }
 
-func (r *RKE2ConfigServer) waitReady(secret *corev1.Secret) (*corev1.Secret, error) {
+func (r *RancherResolver) waitReady(secret *corev1.Secret) (*corev1.Secret, error) {
 	if secret.Labels[capr.MachineNameLabel] != "" {
 		return secret, nil
 	}
@@ -127,15 +106,4 @@ func (r *RKE2ConfigServer) waitReady(secret *corev1.Secret) (*corev1.Secret, err
 func machineRequestSecretName(name string) string {
 	hash := sha256.Sum256([]byte(name))
 	return "custom-" + hex.EncodeToString(hash[:])[:12]
-}
-
-func dataFromHeaders(req *http.Request) map[string]interface{} {
-	data := make(map[string]interface{})
-	for k, v := range req.Header {
-		if strings.HasPrefix(k, headerPrefix) {
-			data[strings.ToLower(strings.TrimPrefix(k, headerPrefix))] = v
-		}
-	}
-
-	return data
 }
