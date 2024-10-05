@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rancher/rancher/pkg/settings"
+	"github.com/rancher/rancher/pkg/capr/settings"
 	"github.com/rancher/rancher/pkg/systemtemplate"
 	"github.com/rancher/rancher/pkg/tls"
 	"github.com/sirupsen/logrus"
@@ -18,16 +18,6 @@ import (
 const (
 	SystemAgentInstallPath = "/system-agent-install.sh" // corresponding curl -o in package/Dockerfile
 	WindowsRke2InstallPath = "/wins-agent-install.ps1"  // corresponding curl -o in package/Dockerfile
-)
-
-var (
-	localAgentInstallScripts = []string{
-		settings.UIPath.Get() + "/assets" + SystemAgentInstallPath,
-		"." + SystemAgentInstallPath,
-	}
-	localWindowsRke2InstallScripts = []string{
-		settings.UIPath.Get() + "/assets" + WindowsRke2InstallPath,
-		"." + WindowsRke2InstallPath}
 )
 
 func installScript(setting settings.Setting, files []string) ([]byte, error) {
@@ -55,17 +45,20 @@ func installScript(setting settings.Setting, files []string) ([]byte, error) {
 	return ioutil.ReadAll(resp.Body)
 }
 
-func LinuxInstallScript(ctx context.Context, token string, envVars []corev1.EnvVar, defaultHost, _ string) ([]byte, error) {
+func (i *Installer) LinuxInstallScript(ctx context.Context, token string, envVars []corev1.EnvVar, defaultHost, _ string) ([]byte, error) {
 	data, err := installScript(
-		settings.SystemAgentInstallScript,
-		localAgentInstallScripts)
+		i.settings["SystemAgentInstallScript"],
+		[]string{
+			i.settings["UIPath"].Get() + "/assets" + SystemAgentInstallPath,
+			"." + SystemAgentInstallPath,
+		})
 	if err != nil {
 		return nil, err
 	}
 	binaryURL := ""
-	if settings.SystemAgentVersion.Get() != "" {
-		if settings.ServerURL.Get() != "" {
-			binaryURL = fmt.Sprintf("CATTLE_AGENT_BINARY_BASE_URL=\"%s/assets\"", settings.ServerURL.Get())
+	if i.settings["SystemAgentVersion"].Get() != "" {
+		if i.settings["ServerURL"].Get() != "" {
+			binaryURL = fmt.Sprintf("CATTLE_AGENT_BINARY_BASE_URL=\"%s/assets\"", i.settings["ServerURL"].Get())
 		} else if defaultHost != "" {
 			binaryURL = fmt.Sprintf("CATTLE_AGENT_BINARY_BASE_URL=\"https://%s/assets\"", defaultHost)
 		}
@@ -89,7 +82,7 @@ func LinuxInstallScript(ctx context.Context, token string, envVars []corev1.EnvV
 		}
 	}
 	if !found {
-		if settings.AgentTLSMode.Get() == settings.AgentTLSModeStrict {
+		if i.settings["AgentTLSMode"].Get() == "strict" {
 			envVars = append(envVars, corev1.EnvVar{
 				Name:  "STRICT_VERIFY",
 				Value: "true",
@@ -110,8 +103,8 @@ func LinuxInstallScript(ctx context.Context, token string, envVars []corev1.EnvV
 		envVarBuf.WriteString(fmt.Sprintf("%s=\"%s\"\n", envVar.Name, envVar.Value))
 	}
 	server := ""
-	if settings.ServerURL.Get() != "" {
-		server = fmt.Sprintf("CATTLE_SERVER=%s", settings.ServerURL.Get())
+	if i.settings["ServerURL"].Get() != "" {
+		server = fmt.Sprintf("CATTLE_SERVER=%s", i.settings["ServerURL"].Get())
 	}
 	return []byte(fmt.Sprintf(`#!/usr/bin/env sh
 %s
@@ -124,29 +117,31 @@ func LinuxInstallScript(ctx context.Context, token string, envVars []corev1.EnvV
 `, envVarBuf.String(), binaryURL, server, ca, token, data)), nil
 }
 
-func WindowsInstallScript(ctx context.Context, token string, envVars []corev1.EnvVar, defaultHost, dataDir string) ([]byte, error) {
+func (i *Installer) WindowsInstallScript(ctx context.Context, token string, envVars []corev1.EnvVar, defaultHost, dataDir string) ([]byte, error) {
 	data, err := installScript(
-		settings.WinsAgentInstallScript,
-		localWindowsRke2InstallScripts)
+		i.settings["WinsAgentInstallScript"],
+		[]string{
+			i.settings["UIPath"].Get() + "/assets" + WindowsRke2InstallPath,
+			"." + WindowsRke2InstallPath})
 	if err != nil {
 		return nil, err
 	}
 
 	binaryURL := ""
-	if settings.WinsAgentVersion.Get() != "" {
-		if settings.ServerURL.Get() != "" {
-			binaryURL = fmt.Sprintf("$env:CATTLE_AGENT_BINARY_BASE_URL=\"%s/assets\"", settings.ServerURL.Get())
+	if i.settings["WinsAgentVersion"].Get() != "" {
+		if i.settings["ServerURL"].Get() != "" {
+			binaryURL = fmt.Sprintf("$env:CATTLE_AGENT_BINARY_BASE_URL=\"%s/assets\"", i.settings["ServerURL"].Get())
 		} else if defaultHost != "" {
 			binaryURL = fmt.Sprintf("$env:CATTLE_AGENT_BINARY_BASE_URL=\"https://%s/assets\"", defaultHost)
 		}
 	}
 
-	csiProxyURL := settings.CSIProxyAgentURL.Get()
+	csiProxyURL := i.settings["CSIProxyAgentURL"].Get()
 	csiProxyVersion := "v1.0.0"
-	if settings.CSIProxyAgentVersion.Get() != "" {
-		csiProxyVersion = settings.CSIProxyAgentVersion.Get()
-		if settings.ServerURL.Get() != "" {
-			csiProxyURL = fmt.Sprintf("%s/assets/csi-proxy-%%[1]s.tar.gz", settings.ServerURL.Get())
+	if i.settings["CSIProxyAgentVersion"].Get() != "" {
+		csiProxyVersion = i.settings["CSIProxyAgentVersion"].Get()
+		if i.settings["ServerURL"].Get() != "" {
+			csiProxyURL = fmt.Sprintf("%s/assets/csi-proxy-%%[1]s.tar.gz", i.settings["ServerURL"].Get())
 		} else if defaultHost != "" {
 			csiProxyURL = fmt.Sprintf("https://%s/assets/csi-proxy-%%[1]s.tar.gz", defaultHost)
 		}
@@ -170,12 +165,12 @@ func WindowsInstallScript(ctx context.Context, token string, envVars []corev1.En
 		envVarBuf.WriteString(fmt.Sprintf("$env:%s=\"%s\"\n", envVar.Name, envVar.Value))
 	}
 	server := ""
-	if settings.ServerURL.Get() != "" {
-		server = fmt.Sprintf("$env:CATTLE_SERVER=\"%s\"", settings.ServerURL.Get())
+	if i.settings["ServerURL"].Get() != "" {
+		server = fmt.Sprintf("$env:CATTLE_SERVER=\"%s\"", i.settings["ServerURL"].Get())
 	}
 
 	strictVerify := "false"
-	if settings.AgentTLSMode.Get() == settings.AgentTLSModeStrict {
+	if i.settings["AgentTLSMode"].Get() == "strict" {
 		strictVerify = "true"
 	}
 

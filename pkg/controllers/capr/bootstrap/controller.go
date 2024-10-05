@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	caprsettings "github.com/rancher/rancher/pkg/capr/settings"
+	"github.com/rancher/rancher/pkg/settings"
 	"strings"
 	"time"
 
@@ -112,6 +114,10 @@ func Register(ctx context.Context, clients *wrangler.Context) {
 	}, clients.RKE.RKEBootstrap(), clients.Core.ServiceAccount(), clients.CAPI.Machine())
 }
 
+func cAPRSetting(setting settings.Setting) caprsettings.Setting {
+	return caprsettings.NewSetting(setting.Get, setting.Default)
+}
+
 func (h *handler) getBootstrapSecret(namespace, name string, envVars []corev1.EnvVar, machine *capi.Machine, dataDir string) (*corev1.Secret, error) {
 	sa, err := h.serviceAccountCache.Get(namespace, name)
 	if apierrors.IsNotFound(err) {
@@ -132,9 +138,21 @@ func (h *handler) getBootstrapSecret(namespace, name string, envVars []corev1.En
 		return nil, err
 	}
 
-	is := installer.LinuxInstallScript
+	i := installer.NewInstaller(map[string]caprsettings.Setting{
+		"ServerURL":                cAPRSetting(settings.ServerURL),
+		"WinsAgentInstallScript":   cAPRSetting(settings.WinsAgentInstallScript),
+		"AgentTLSMode":             cAPRSetting(settings.AgentTLSMode),
+		"SystemAgentVersion":       cAPRSetting(settings.SystemAgentVersion),
+		"SystemAgentInstallScript": cAPRSetting(settings.SystemAgentInstallScript),
+		"UIPath":                   cAPRSetting(settings.UIPath),
+		"WinsAgentVersion":         cAPRSetting(settings.WinsAgentVersion),
+		"CSIProxyAgentURL":         cAPRSetting(settings.CSIProxyAgentURL),
+		"CSIProxyAgentVersion":     cAPRSetting(settings.CSIProxyAgentVersion),
+	})
+
+	is := i.LinuxInstallScript
 	if os := machine.GetLabels()[capr.CattleOSLabel]; os == capr.WindowsMachineOS {
-		is = installer.WindowsInstallScript
+		is = i.WindowsInstallScript
 	}
 
 	data, err := is(context.WithValue(context.Background(), tls.InternalAPI, hasHostPort), base64.URLEncoding.EncodeToString(hash[:]), envVars, "", dataDir)

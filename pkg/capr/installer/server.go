@@ -1,22 +1,28 @@
 package installer
 
 import (
+	"github.com/rancher/rancher/pkg/capr/settings"
 	"net/http"
 )
 
-type handler struct{}
+type Installer struct {
+	settings map[string]settings.Setting
+}
 
-var Handler *handler
+func NewInstaller(s map[string]settings.Setting) *Installer {
+	return &Installer{
+		settings: s,
+	}
+}
 
-func (s *handler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+func (i *Installer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	var err error
 	var content []byte
-
 	switch req.URL.Path {
 	case SystemAgentInstallPath:
-		content, err = LinuxInstallScript(req.Context(), "", nil, req.Host, "")
+		content, err = i.LinuxInstallScript(req.Context(), "", nil, req.Host, "")
 	case WindowsRke2InstallPath:
-		content, err = WindowsInstallScript(req.Context(), "", nil, req.Host, "")
+		content, err = i.WindowsInstallScript(req.Context(), "", nil, req.Host, "")
 	}
 
 	if err != nil {

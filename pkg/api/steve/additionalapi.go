@@ -15,12 +15,17 @@ import (
 	rancherconfigserverresolver "github.com/rancher/rancher/pkg/capr-rancher/configserverresolver"
 	caprconfigserver "github.com/rancher/rancher/pkg/capr/configserver"
 	"github.com/rancher/rancher/pkg/capr/installer"
+	caprsettings "github.com/rancher/rancher/pkg/capr/settings"
 	"github.com/rancher/rancher/pkg/features"
 	"github.com/rancher/rancher/pkg/settings"
 	"github.com/rancher/rancher/pkg/wrangler"
 	steve "github.com/rancher/steve/pkg/server"
 	"k8s.io/client-go/tools/cache"
 )
+
+func cAPRSetting(setting settings.Setting) caprsettings.Setting {
+	return caprsettings.NewSetting(setting.Get, setting.Default)
+}
 
 func AdditionalAPIsPreMCM(config *wrangler.Context) func(http.Handler) http.Handler {
 	if features.RKE2.Enabled() {
@@ -36,8 +41,19 @@ func AdditionalAPIsPreMCM(config *wrangler.Context) func(http.Handler) http.Hand
 		mux.Handle(caprconfigserver.ConnectAgent, caprConfigServer)
 		mux.Handle(rancherconfigserver.ConnectConfigYamlPath, rancherConfigServer)
 		mux.Handle(rancherconfigserver.ConnectClusterInfo, rancherConfigServer)
-		mux.Handle(installer.SystemAgentInstallPath, installer.Handler)
-		mux.Handle(installer.WindowsRke2InstallPath, installer.Handler)
+		i := installer.NewInstaller(map[string]caprsettings.Setting{
+			"ServerURL":                cAPRSetting(settings.ServerURL),
+			"WinsAgentInstallScript":   cAPRSetting(settings.WinsAgentInstallScript),
+			"AgentTLSMode":             cAPRSetting(settings.AgentTLSMode),
+			"SystemAgentVersion":       cAPRSetting(settings.SystemAgentVersion),
+			"SystemAgentInstallScript": cAPRSetting(settings.SystemAgentInstallScript),
+			"UIPath":                   cAPRSetting(settings.UIPath),
+			"WinsAgentVersion":         cAPRSetting(settings.WinsAgentVersion),
+			"CSIProxyAgentURL":         cAPRSetting(settings.CSIProxyAgentURL),
+			"CSIProxyAgentVersion":     cAPRSetting(settings.CSIProxyAgentVersion),
+		})
+		mux.Handle(installer.SystemAgentInstallPath, i)
+		mux.Handle(installer.WindowsRke2InstallPath, i)
 		return func(next http.Handler) http.Handler {
 			mux.NotFoundHandler = next
 			return mux
